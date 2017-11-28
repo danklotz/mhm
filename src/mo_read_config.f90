@@ -92,8 +92,12 @@ CONTAINS
   !                  Juliane Mai,    Oct  2013 - adding global_parameters_name
   !                  Matthias Zink,  Nov  2013 - edited documentation and included DEFAULT cases for ptocess Matrix
   !                  Stephan Thober, Nov  2013 - added read of directories where latitude longitude fields are located
+  !                  Matthias Zink,  Feb  2014 - added multiple options for PET process
   !                  Matthias Zink,  Mar  2014 - added inflow from upstream areas and gauge information as namelist
   !                  Rohini Kumar,   May  2014 - added options for the model run coordinate system
+  !                  Stephan Thober, May  2014 - added switch for chunk read in
+  !                  Stephan Thober, Jun  2014 - added option for switching off mpr
+  !                  Matthias Cuntz & Juliane Mai Nov 2014 - LAI input from daily, monthly or yearly files
 
   subroutine read_config()
 
@@ -117,11 +121,16 @@ CONTAINS
          file_geolut, ugeolut                                 ! file specifying geological formations
     use mo_global_variables, only:                          &
          timestep,                                          & ! model time step
+         timestep_model_inputs,                             & ! read input frequency
          resolutionHydrology, resolutionRouting,            & ! resolutions of hydrology and routing 
          L0_Basin,                                          & ! L0_Basin ID
          dirMorpho, dirLCover,                              & ! input directory of morphological
          dirGauges,                                         & ! and discharge files
-         dirPrecipitation, dirTemperature, dirReferenceET,  & ! directory of meteo input
+         dirPrecipitation, dirTemperature,                  & ! directory of meteo input
+         dirReferenceET,                                    & ! PET input path  if process 5 is 'PET is input' (case 0)
+         dirMinTemperature, dirMaxTemperature,              & ! PET input paths if process 5 is HarSam (case 1)
+         dirNetRadiation,                                   & ! PET input paths if process 5 is PrieTay (case 2)
+         dirabsVapPressure, dirwindspeed,                   & ! PET input paths if process 5 is PenMon (case 3)
          inputFormat_meteo_forcings,                        & ! input format either bin or nc
          dirLatLon,                                         & ! directory of latitude and longitude files
          dirConfigOut,                                      & ! configuration run output directory
@@ -130,6 +139,7 @@ CONTAINS
          dirOut,                                            & ! output directory basin wise 
          dirRestartOut,                                     & ! output directory of restart file basin wise
          dirRestartIn,                                      & ! input directory of restart file basin wise
+         dirgridded_LAI,                                    & ! Directory where gridded LAI is located
          optimize,                                          & ! if mhm runs in optimization mode or not
          opti_method,                                       & ! optimization algorithm used    
          opti_function,                                     & ! objective function to be optimized
@@ -143,10 +153,9 @@ CONTAINS
          fracSealed_cityArea, nLcover_scene,                & ! land cover information
          LCfilename, LCyearId,                              & ! 
          nBasins,                                           & ! number of basins
-         restart_flag_states_read,                          & ! flag reading restart (state variables)
-         restart_flag_states_write,                         & ! flag writing restart (state variables)
-         restart_flag_config_read,                          & ! flag reading restart (config variables)
-         restart_flag_config_write,                         & ! flag writing restart (config variables)
+         read_restart,                                      & ! flag reading restart
+         write_restart,                                     & ! flag writing restart
+         perform_mpr,                                       & ! switch for performing mpr
          warmingDays, warmPer,                              & ! warming days and warming period
          evalPer, simPer,                                   & ! model eval. & sim. periods  
          !                                                    ! (sim. = wrm. + eval.)
@@ -163,10 +172,8 @@ CONTAINS
          global_parameters_name,                            & ! clear names of global parameters
          timeStep_model_outputs,                            & ! timestep for writing model outputs
          outputFlxState,                                    & ! definition which output to write
-         iFlag_LAI_data_format,                             & ! flag on how LAI data has to be read
-         !                                                    ! used when iFlag_LAI_data_format = 1
          inputFormat_gridded_LAI,                           & ! format of gridded LAI data(bin or nc)
-         dirgridded_LAI,                                    & ! Directory where gridded LAI is located
+         timeStep_LAI_input,                                & ! time step of gridded LAI input
          iFlag_cordinate_sys                                  ! model run cordinate system
 
     implicit none
@@ -201,16 +208,26 @@ CONTAINS
     real(dp), dimension(nColPars)                   :: PTF_Ks_sand                       
     real(dp), dimension(nColPars)                   :: PTF_Ks_clay                       
     real(dp), dimension(nColPars)                   :: PTF_Ks_curveSlope                 
-    ! directRunoff
-    real(dp), dimension(nColPars)                   :: imperviousStorageCapacity         
-    ! actualET
     real(dp), dimension(nColPars)                   :: rootFractionCoefficient_forest    
     real(dp), dimension(nColPars)                   :: rootFractionCoefficient_impervious
     real(dp), dimension(nColPars)                   :: rootFractionCoefficient_pervious  
+    ! directRunoff
+    real(dp), dimension(nColPars)                   :: imperviousStorageCapacity         
+    ! PET0
     real(dp), dimension(nColPars)                   :: minCorrectionFactorPET            
     real(dp), dimension(nColPars)                   :: maxCorrectionFactorPET            
     real(dp), dimension(nColPars)                   :: aspectTresholdPET                 
-    ! interflow
+    real(dp), dimension(nColPars)                   :: HargreavesSamaniCoeff
+    real(dp), dimension(nColPars)                   :: PriestleyTaylorCoeff
+    real(dp), dimension(nColPars)                   :: PriestleyTaylorLAIcorr
+    real(dp), dimension(nColPars)                   :: canopyheigth_forest               
+    real(dp), dimension(nColPars)                   :: canopyheigth_impervious           
+    real(dp), dimension(nColPars)                   :: canopyheigth_pervious             
+    real(dp), dimension(nColPars)                   :: displacementheight_coeff          
+    real(dp), dimension(nColPars)                   :: roughnesslength_momentum_coeff    
+    real(dp), dimension(nColPars)                   :: roughnesslength_heat_coeff        
+    real(dp), dimension(nColPars)                   :: stomatal_resistance
+    ! interflow                                        
     real(dp), dimension(nColPars)                   :: interflowStorageCapacityFactor    
     real(dp), dimension(nColPars)                   :: interflowRecession_slope          
     real(dp), dimension(nColPars)                   :: fastInterflowRecession_forest     
@@ -233,24 +250,30 @@ CONTAINS
     ! some dummy arrays for namelist read in (allocatables not allowed in namelists)
     character(256)                                  :: dummy 
     character(256)                                  :: fname
+
     integer(i4),dimension(maxNoSoilHorizons)        :: soil_Depth           ! depth of the single horizons
     character(256), dimension(maxNoBasins)          :: dir_Morpho
     character(256), dimension(maxNoBasins)          :: dir_LCover
     character(256), dimension(maxNoBasins)          :: dir_Gauges
     character(256), dimension(maxNoBasins)          :: dir_Precipitation
     character(256), dimension(maxNoBasins)          :: dir_Temperature
+    character(256), dimension(maxNoBasins)          :: dir_MinTemperature
+    character(256), dimension(maxNoBasins)          :: dir_MaxTemperature
+    character(256), dimension(maxNoBasins)          :: dir_NetRadiation
+    character(256), dimension(maxNoBasins)          :: dir_windspeed
+    character(256), dimension(maxNoBasins)          :: dir_absVapPressure
     character(256), dimension(maxNoBasins)          :: dir_ReferenceET
     character(256), dimension(maxNoBasins)          :: dir_Out
     character(256), dimension(maxNoBasins)          :: dir_RestartOut
     character(256), dimension(maxNoBasins)          :: dir_RestartIn
     character(256), dimension(maxNoBasins)          :: dir_LatLon
+    character(256), dimension(maxNoBasins)          :: dir_gridded_LAI           ! directory of gridded LAI data 
+    !                                                                            ! used when timeStep_LAI_input<0
     integer(i4),    dimension(maxNLCovers)          :: LCoverYearStart           ! starting year of LCover
     integer(i4),    dimension(maxNLCovers)          :: LCoverYearEnd             ! ending year  of LCover
     character(256), dimension(maxNLCovers)          :: LCoverfName               ! filename of Lcover file
     real(dp),       dimension(maxGeoUnit, nColPars) :: GeoParam                  ! geological parameters
     !
-    character(256), dimension(maxNoBasins)          :: dir_gridded_LAI     ! directory of gridded LAI data 
-    !                                                                            ! used when iFlag_LAI_data_format = 1
     real(dp)                                        :: jday_frac
     !
     real(dp),    dimension(maxNoBasins)             :: resolution_Hydrology
@@ -267,21 +290,22 @@ CONTAINS
 
     ! define namelists
     ! namelist directories
-    namelist /directories/ dirConfigOut, dirCommonFiles, inputFormat_meteo_forcings,  &
-                           dir_Morpho,dir_LCover,dir_Gauges,dir_Precipitation,        &
-                           dir_Temperature, dir_ReferenceET, dir_Out, dir_RestartOut, &
-                           dir_RestartIn, dir_LatLon
+    namelist /directories/ dirConfigOut, dirCommonFiles, inputFormat_meteo_forcings,          &
+                           dir_Morpho,dir_LCover,dir_Gauges,dir_Precipitation,                &
+                           dir_Temperature, dir_ReferenceET, dir_MinTemperature,              &
+                           dir_MaxTemperature, dir_absVapPressure, dir_windspeed,             &
+                           dir_NetRadiation, dir_Out, dir_RestartOut,                          &
+                           dir_RestartIn, dir_LatLon, dir_gridded_LAI
     ! namelist spatial & temporal resolution, otmization information
     namelist /mainconfig/ timestep, iFlag_cordinate_sys, resolution_Hydrology, resolution_Routing, &
-                 L0Basin, optimize, opti_method, opti_function, nBasins, restart_flag_states_read, &
-                 restart_flag_states_write, restart_flag_config_read, restart_flag_config_write,   &
-                 warmingDays, evalPer
+                 L0Basin, optimize, opti_method, opti_function, nBasins, read_restart,             &
+                 write_restart, perform_mpr, warmingDays, evalPer, timestep_model_inputs
     ! namelsit soil layering
     namelist /soilLayer/ tillageDepth, nSoilHorizons_mHM, soil_Depth
     ! namelist for land cover scenes
     namelist/LCover/fracSealed_cityArea,nLcover_scene,LCoverYearStart,LCoverYearEnd,LCoverfName
     ! namelist for LAI related data
-    namelist/LAI_data_information/iFlag_LAI_data_format,inputFormat_gridded_LAI,dir_gridded_LAI
+    namelist /LAI_data_information/ inputFormat_gridded_LAI, timeStep_LAI_input
     ! namelist for pan evaporation
     namelist/panEvapo/evap_coeff
     ! namelist for night-day ratio of precipitation, referenceET and temperature
@@ -294,8 +318,8 @@ CONTAINS
     namelist /inflow_gauges/ nInflowGaugesTotal, NoInflowGauges_basin, InflowGauge_id, InflowGauge_filename
     ! namelist parameters
     namelist /interception1/ canopyInterceptionFactor
-    namelist /snow1/snowTreshholdTemperature, degreeDayFactor_forest, degreeDayFactor_impervious,  &
-         degreeDayFactor_pervious, increaseDegreeDayFactorByPrecip, maxDegreeDayFactor_forest,     &
+    namelist /snow1/snowTreshholdTemperature, degreeDayFactor_forest, degreeDayFactor_impervious,         &
+         degreeDayFactor_pervious, increaseDegreeDayFactorByPrecip, maxDegreeDayFactor_forest,            &
          maxDegreeDayFactor_impervious, maxDegreeDayFactor_pervious       
     namelist/soilmoisture1/ orgMatterContent_forest, orgMatterContent_impervious, orgMatterContent_pervious, &         
          PTF_lower66_5_constant, PTF_lower66_5_clay, PTF_lower66_5_Db, PTF_higher66_5_constant,      &           
@@ -304,8 +328,12 @@ CONTAINS
          rootFractionCoefficient_forest, rootFractionCoefficient_impervious,                         &
          rootFractionCoefficient_pervious, infiltrationShapeFactor
     namelist /directRunoff1/ imperviousStorageCapacity
-    namelist /actualET1/  minCorrectionFactorPET, maxCorrectionFactorPET, aspectTresholdPET
-    namelist /interflow1/ interflowStorageCapacityFactor, interflowRecession_slope, fastInterflowRecession_forest, &     
+    namelist /PET0/  minCorrectionFactorPET, maxCorrectionFactorPET, aspectTresholdPET 
+    namelist /PET1/  minCorrectionFactorPET, maxCorrectionFactorPET, aspectTresholdPET, HargreavesSamaniCoeff
+    namelist /PET2/  PriestleyTaylorCoeff, PriestleyTaylorLAIcorr
+    namelist /PET3/  canopyheigth_forest, canopyheigth_impervious, canopyheigth_pervious, displacementheight_coeff,    & 
+         roughnesslength_momentum_coeff, roughnesslength_heat_coeff, stomatal_resistance
+    namelist /interflow1/ interflowStorageCapacityFactor, interflowRecession_slope, fastInterflowRecession_forest,     &     
          slowInterflowRecession_Ks, exponentSlowInterflow    
     namelist /percolation1/ rechargeCoefficient, rechargeFactor_karstic, gain_loss_GWreservoir_karstic     
     namelist /routing1/ muskingumTravelTime_constant, muskingumTravelTime_riverLength, muskingumTravelTime_riverSlope, &
@@ -333,19 +361,25 @@ CONTAINS
        stop
     end if
     ! allocate patharray sizes
-    allocate(resolutionHydrology(nBasins))
-    allocate(resolutionRouting(nBasins))
-    allocate(L0_Basin(nBasins))
-    allocate(dirMorpho(nBasins))
-    allocate(dirLCover(nBasins))
-    allocate(dirGauges(nBasins))
-    allocate(dirPrecipitation(nBasins))
-    allocate(dirTemperature(nBasins))
-    allocate(dirReferenceET(nBasins))
-    allocate(dirOut(nBasins))
-    allocate(dirRestartOut(nBasins))
-    allocate(dirRestartIn(nBasins))
-    allocate(dirLatLon(nBasins))
+    allocate(resolutionHydrology (nBasins))
+    allocate(resolutionRouting   (nBasins))
+    allocate(L0_Basin            (nBasins))
+    allocate(dirMorpho           (nBasins))
+    allocate(dirLCover           (nBasins))
+    allocate(dirGauges           (nBasins))
+    allocate(dirPrecipitation    (nBasins))
+    allocate(dirTemperature      (nBasins))
+    allocate(dirwindspeed        (nBasins))
+    allocate(dirabsVapPressure   (nBasins))
+    allocate(dirReferenceET      (nBasins))
+    allocate(dirMinTemperature   (nBasins))
+    allocate(dirMaxTemperature   (nBasins))
+    allocate(dirNetRadiation     (nBasins))
+    allocate(dirOut              (nBasins))
+    allocate(dirRestartOut       (nBasins))
+    allocate(dirRestartIn        (nBasins))
+    allocate(dirLatLon           (nBasins))
+    allocate(dirgridded_LAI(nBasins))
     !
     resolutionHydrology = resolution_Hydrology(1:nBasins)
     resolutionRouting   = resolution_Routing(1:nBasins)
@@ -357,6 +391,19 @@ CONTAINS
        call message('***ERROR: coordinate system for the model run should be 0 or 1')
        stop
     end if
+    ! check for optimzation and timestep_model_inputs options
+    if ( optimize .and. ( timestep_model_inputs .ne. 0 ) ) then
+       call message()
+       call message('***ERROR: optimize and chunk read is switched on! (set timestep_model_inputs to zero)')
+       stop
+    end if
+    ! check for perform_mpr
+    if ( ( .not. read_restart ) .and. ( .not. perform_mpr ) ) then
+       call message()
+       call message('***ERROR: cannot omit mpr when read_restart is set to .false.')
+       stop
+    end if
+    
     !===============================================================
     !  determine simulation time period incl. warming days
     !===============================================================
@@ -392,16 +439,24 @@ CONTAINS
     !===============================================================
     call position_nml('directories', unamelist)
     read(unamelist, nml=directories)
-    dirMorpho       = dir_Morpho(1:nBasins)
-    dirLCover       = dir_LCover(1:nBasins)
-    dirGauges       = dir_Gauges(1:nBasins)      
-    dirPrecipitation= dir_Precipitation(1:nBasins)
-    dirTemperature  = dir_Temperature(1:nBasins)
-    dirReferenceET  = dir_ReferenceET(1:nBasins)
-    dirOut          = dir_Out(1:nBasins)
-    dirRestartOut   = dir_RestartOut(1:nBasins)
-    dirRestartIn    = dir_RestartIn(1:nBasins)
-    dirLatLon       = dir_LatLon(1:nBasins)
+
+    dirMorpho                 = dir_Morpho         (1:nBasins)
+    dirLCover                 = dir_LCover         (1:nBasins)
+    dirGauges                 = dir_Gauges         (1:nBasins)      
+    dirPrecipitation          = dir_Precipitation  (1:nBasins)
+    dirTemperature            = dir_Temperature    (1:nBasins)
+    dirReferenceET            = dir_ReferenceET    (1:nBasins)
+    dirMinTemperature         = dir_MinTemperature (1:nBasins)
+    dirMaxTemperature         = dir_MaxTemperature (1:nBasins)
+    dirNetRadiation           = dir_NetRadiation   (1:nBasins)
+    dirwindspeed              = dir_windspeed      (1:nBasins)
+    dirabsVapPressure         = dir_absVapPressure (1:nBasins)
+    dirOut                    = dir_Out            (1:nBasins)
+    dirRestartOut             = dir_RestartOut     (1:nBasins)
+    dirRestartIn              = dir_RestartIn      (1:nBasins)
+    dirLatLon                 = dir_LatLon         (1:nBasins)
+
+    dirgridded_LAI  = dir_gridded_LAI(1:nBasins)
     ! counter checks -- soil horizons
     if (nSoilHorizons_mHM .GT. maxNoSoilHorizons) then
        call message()
@@ -437,9 +492,17 @@ CONTAINS
     call position_nml('LAI_data_information', unamelist)
     read(unamelist, nml=LAI_data_information)
 
-    if(iFlag_LAI_data_format .EQ. 1) then
-       allocate( dirgridded_LAI(nBasins) )
-       dirgridded_LAI(:) = dir_gridded_LAI(1:nBasins)
+    if (timeStep_LAI_input .ne. 0) then
+       if ( (timeStep_LAI_input .ne. -1) .and. (trim(inputFormat_gridded_LAI) .eq. 'bin') ) then
+          call message()
+          call message('***ERROR: Gridded LAI input in bin format must be daily.')
+          stop
+       end if
+       if (timeStep_LAI_input > 0) then
+          call message()
+          call message('***ERROR: timeStep_LAI_input must be <= 0.')
+          stop
+       end if
     end if
 
     !===============================================================
@@ -658,7 +721,8 @@ CONTAINS
     allocate(LCfilename(nLcover_scene))
     LCfilename(:) = LCoverfName(minval(LCyearId):maxval(LCyearId))
     ! update the ID's
-    LCyearId = LCyearId - minval(LCyearId) + 1
+    ! use next line because of Intel11 bug: LCyearId = LCyearId - minval(LCyearId) + 1
+    LCyearId(:) = LCyearId(:) - minval(LCyearId) + 1
     !
     if (any(LCyearId .EQ. nodata_i4)) then 
        call message()
@@ -866,12 +930,12 @@ CONTAINS
        stop
     end select
 
-    ! Process 5 - actualET (meteo correction  factor)
+    ! Process 5 - potential evapotranspiration (PET)
     select case (processCase(5))
-    ! 1 - root fraction approach
-    case(1)
-       call position_nml('actualET1', unamelist_param)
-       read(unamelist_param, nml=actualET1)
+    ! 0 - PET is input, correct PET by aspect
+    case(0)
+       call position_nml('PET0', unamelist_param)
+       read(unamelist_param, nml=PET0)
        processMatrix(5, 1) = processCase(5)
        processMatrix(5, 2) = 3_i4
        processMatrix(5, 3) = sum(processMatrix(1:5, 2))
@@ -880,13 +944,103 @@ CONTAINS
        call append(global_parameters, reshape(aspectTresholdPET,                  (/1, nColPars/)))
 
        call append(global_parameters_name, (/ &
-            'minCorrectionFactorPET', &
-            'maxCorrectionFactorPET', &
-            'aspectTresholdPET     '/))
+            'minCorrectionFactorPET ', &
+            'maxCorrectionFactorPET ', &
+            'aspectTresholdPET      '/))
 
        ! check if parameter are in range
        if ( .not. in_bound(global_parameters) ) then
-          call message('***ERROR: parameter in namelist "actualET1" out of bound in ', &
+          call message('***ERROR: parameter in namelist "PET0" out of bound in ', &
+               trim(adjustl(file_namelist_param)))
+          stop
+       end if
+
+    ! 1 - Hargreaves-Samani method (HarSam) - additional input needed: Tmin, Tmax
+    case(1)
+       call position_nml('PET1', unamelist_param)
+       read(unamelist_param, nml=PET1)
+       processMatrix(5, 1) = processCase(5)
+       processMatrix(5, 2) = 4_i4
+       processMatrix(5, 3) = sum(processMatrix(1:5, 2))
+       call append(global_parameters, reshape(minCorrectionFactorPET,             (/1, nColPars/)))
+       call append(global_parameters, reshape(maxCorrectionFactorPET,             (/1, nColPars/)))
+       call append(global_parameters, reshape(aspectTresholdPET,                  (/1, nColPars/)))
+       call append(global_parameters, reshape(HargreavesSamaniCoeff,              (/1, nColPars/)))
+       call append(global_parameters_name, (/ &
+            'minCorrectionFactorPET', &
+            'maxCorrectionFactorPET', &
+            'aspectTresholdPET     ', &
+            'HargreavesSamaniCoeff '/))
+
+       ! check if parameter are in range
+       if ( .not. in_bound(global_parameters) ) then
+          call message('***ERROR: parameter in namelist "PET1" out of bound in ', &
+               trim(adjustl(file_namelist_param)))
+          stop
+       end if
+
+    ! 2 - Priestley-Taylor method (PrieTay) - additional input needed: net_rad
+    case(2)
+       ! check which LAI input is specified
+       if (timeStep_LAI_input .NE. 0) then
+          call message('***ERROR: The specified option of process 5 does only work with LAI from LUT.')
+          call message('          For process 5 the options 0 and 1 work with timeStep_LAI_input unequal to 0.')
+          stop
+       end if
+
+       call position_nml('PET2', unamelist_param)
+       read(unamelist_param, nml=PET2)
+       processMatrix(5, 1) = processCase(5)
+       processMatrix(5, 2) = 2_i4
+       processMatrix(5, 3) = sum(processMatrix(1:5, 2))
+       call append(global_parameters, reshape(PriestleyTaylorCoeff,               (/1, nColPars/)))
+       call append(global_parameters, reshape(PriestleyTaylorLAIcorr,             (/1, nColPars/)))
+       call append(global_parameters_name, (/ &
+            'PriestleyTaylorCoeff  ', &
+            'PriestleyTaylorLAIcorr'/))
+
+       ! check if parameter are in range
+       if ( .not. in_bound(global_parameters) ) then
+          call message('***ERROR: parameter in namelist "PET2" out of bound in ', &
+               trim(adjustl(file_namelist_param)))
+          stop
+       end if
+
+    ! 3 - Penman-Monteith method (PenMon) - additional input needed: net_rad, abs. vapour pressue, windspeed
+    case(3)
+       ! check which LAI input is specified
+       if (timeStep_LAI_input .NE. 0) then
+          call message('***ERROR: The specified option of process 5 does only work with LAI from LUT.')
+          call message('          For process 5 the options 0 and 1 work with timeStep_LAI_input unequal to 0.')
+          stop
+       end if
+
+       call position_nml('PET3', unamelist_param)
+       read(unamelist_param, nml=PET3)
+       processMatrix(5, 1) = processCase(5)
+       processMatrix(5, 2) = 7_i4
+       processMatrix(5, 3) = sum(processMatrix(1:5, 2))
+
+       call append(global_parameters, reshape(canopyheigth_forest,                (/1, nColPars/)))
+       call append(global_parameters, reshape(canopyheigth_impervious,            (/1, nColPars/)))
+       call append(global_parameters, reshape(canopyheigth_pervious,              (/1, nColPars/)))
+       call append(global_parameters, reshape(displacementheight_coeff,           (/1, nColPars/)))
+       call append(global_parameters, reshape(roughnesslength_momentum_coeff,     (/1, nColPars/)))
+       call append(global_parameters, reshape(roughnesslength_heat_coeff,         (/1, nColPars/)))
+       call append(global_parameters, reshape(stomatal_resistance,                (/1, nColPars/)))
+
+       call append(global_parameters_name, (/ &
+            'canopyheigth_forest           ', &
+            'canopyheigth_impervious       ', &
+            'canopyheigth_pervious         ', &
+            'displacementheight_coeff      ', &
+            'roughnesslength_momentum_coeff', &
+            'roughnesslength_heat_coeff    ', &
+            'stomatal_resistance           '/))   
+
+       ! check if parameter are in range
+       if ( .not. in_bound(global_parameters) ) then
+          call message('***ERROR: parameter in namelist "PET3" out of bound in ', &
                trim(adjustl(file_namelist_param)))
           stop
        end if
@@ -896,6 +1050,7 @@ CONTAINS
        call message('***ERROR: Process description for process "actualET" does not exist!')          
        stop
     end select
+
 
     ! Process 6 - interflow
     select case (processCase(6))
@@ -1117,7 +1272,7 @@ CONTAINS
 
     call message( '  FLUXES:' )
     if (outputFlxState(9)) then
-      call message( '    actual evapotranspiration aET                              [mm/T]')
+      call message( '    actual evapotranspiration aET      (L1_pet)                [mm/T]')
     end if
     if (outputFlxState(10)) then
       call message( '    total discharge generated per cell (L1_total_runoff)       [mm/T]')
@@ -1135,7 +1290,10 @@ CONTAINS
       call message( '    baseflow generated per cell        (L1_baseflow)           [mm/T]')
     end if
     if (outputFlxState(15)) then
-      call message( '    groundwater recharge               (L1_percol)             [mm/T]')
+       call message( '    groundwater recharge               (L1_percol)             [mm/T]')
+    end if
+    if (outputFlxState(16)) then 
+       call message( '    infiltration                       (L1_infilSoil)          [mm/T]') 
     end if
     call message( '' )
     call message( 'FINISHED readin config' )

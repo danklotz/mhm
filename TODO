@@ -1,13 +1,50 @@
-                    ===================================
-                               TODO for mHM
-                       NEXT RELEASE :: June 1st, 2014
-                    ===================================
+                    ====================================
+                               TODO for mHM v5.3
+                     NEXT RELEASE :: June 1st, 2014
+                    ====================================
 
 
 =================================================================================================
                      TASKS FOR NEXT RELEASE
+                        -- Technical --
 =================================================================================================
 
+Transfer mo_file to a namelist to allow for more flexible filenames
+(Resp.: NA)
+
+=================================================================================================
+                     TASKS FOR NEXT RELEASE
+                        -- Scientific --
+=================================================================================================
+
+Groundwater (Process #7)
+(Resp.: Jude, Rohini)
+-- implementation of mo_groundwater which computes every n-th timestep exchange flux 
+   between stream and groundwater reservoir
+   (no regionalization)
+-- following cases should be addressed:
+   case 0 :: off
+   case 1 :: bucket model (status quo)
+   case 2 :: modflow 
+
+Water Quality Process (Process #10)
+(Resp.: Sumit Sinha)
+-- Implementation of equations and comparison to HYPE results
+-- following cases should be addressed:
+   case 0 :: off
+   case 1 :: passive tracer
+   case 2 :: nitrate
+   case 3 :: phosphorus
+
+Neutrons
+(Resp.: Martin)
+-- calculate amount of neutrons from soil moisture
+
+Optimization 
+(Resp.: Olda, Diana, Martin) 
+-- implementation of objective functions for additional (multiple) variables 
+   like soil moisture only or both soil moisture and discharge
+-- implementation of objective functions for variables on multiple scales
 
 
 =================================================================================================
@@ -20,98 +57,52 @@ mo_multi_param_reg
 -- pet_correct: constant hard-coded, not documented  
 
 =================================================================================================
-                      SOLVED
+                          SOLVED
+                     -- New Feature --
 =================================================================================================
 
-Multi-scale case
-(Resp.: Diana)
--- add check cases
+-- Chunk read-in of data
+   (Resp.: Stephan)
 
-Inflow gauge
-(Resp.: Diana)
--- add check cases
+-- perform_mpr flag
+   (Resp.: Stephan)
 
-OpenMP and further speed-up (did not use analysis tool of Matthias C though) 
-(Resp.: Olda, Stephan)
-
-Add Inflow gauges to restart file
-(Resp.: Matthias Zink)
-
-Add Inflow gauges
-(Resp.: Matthias Zink)
-
-multi-scale implementation
-(Resp.: Diana, Stephan)
-
-bug in latlon.py: lat and lon were swapped
-(Resp.: Matthias Zink)
-
-automatic make test 
-(Resp.: Jule, Matthias C)
--- test case 1 :: w/o restart read
--- test case 2 :: w/o restart write
--- test case 3 :: w/o routing
--- test case 4 :: w/o optimization
-
-Initialization in mo_net_startup.f90
-(Resp.: Luis)
-
-L0=L1 bug
-(Resp.: Rohini)
-
-lat-lon version of mHM, i.e. enable mhm to handle grid cells with variable area 
-(Resp.: Rohini)
-
-Remove "dummy" variables in namelists
-(Resp. Matthias C.)
-
-Initialization of variables in mo_netstartup
-(Resp. Luis)
-
-README + RELEASES file
-(Resp.: Jule)
-
-LICENSE file
-(Resp.: Diana, Luis)
-
-Substitute numerical recipes code
-(Resp.: Matthias Cuntz)
--- mo_sce:     sort_matrix
--- mo_sort:    sort, sort_index, arth, icomp_xchg, swap
--- mo_constants
--- mo_julian:  caldat, date2dec, dec2date, julday
--- mo_kind:    sparese array definitions
--- mo_linfit:  linfit
--- mo_moments: absdev, average, correlation, covariance, kurtosis, mean, moment, skewness, stddev, variance
-
-=================================================================================================
-                      NEXT RELEASE
-=================================================================================================
-
-Proper implementation of John's LAI model as a new process, i.e. Process #9 
-(Resp.: Jule, Matthias C.)
-(Postponed to next release)
--- case 1 :: lai read from file as monthly values
--- case 2 :: lai calculated on weekly basis 
-
-PET module
+PET module (Process #5)
 (Resp.: Matthias Z.)
-(Postponed to next release)
 -- case 0 :: PET input file
 -- case 1 :: Hargreaves-Samani
 -- case 2 :: Priestley-Taylor
 -- case 3 :: Penman-Monteith
 
-Transfer mo_file to a namelist to allow for more flexible filenames
-(Postponed to next release)
+Proper implementation of John's LAI model as a new process
+(Resp.: Jule, Matthias C.)
+-- case  0 :: montly  lai read from LUT (default)
+-- case -1 :: daily   lai read from file 
+-- case -2 :: monthly lai read from file 
+-- case -3 :: yearly  lai read from file 
 
-Chunk read-in of data 
-(Resp.: Stephan)
-(Postponed to next release)
+In subroutine hydro_cond of mo_mpr_soilmoist.f90
+(Resp. Jule)
+-- saturated vertical hydraulic conductivity, Ks (cm/d)
+      from Cosby et. al. (WRR 1984) Table 4
+    param(4) is the unit conversion from inch/h to cm/d and should be a constant.
+    Fix it in the namelist, i.e. in
+    mhm_parameter.nml set the 4th value (=FLAG) to 0 and the third value to 60.96
+      PTF_Ks_curveSlope = 60.96, 60.96, 60.96, 0, 1
+
+=================================================================================================
+                          SOLVED
+                       -- Bug Fix --
+=================================================================================================
+
+-- L11_config in ConfigFile correctly printed 
+   (Resp.: Stephan)
+
+-- xllcornerOut in calculate_grid_properties correctly calculated
+   (Resp.: Stephan)
 
 L11 - outlet plot 
 (Resp.: Luis, Rohini)
-(Postponed to next release)
 -- Outlet displayed wrongly in file 001_L11_config.nc. It should be on the border. See var L11_label. 
    The outlet has a cell attribute 2. In Horb this correspond to x=13, y=7, which is wrongly placed.
 
