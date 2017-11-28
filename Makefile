@@ -94,7 +94,7 @@ SHELL = /bin/bash
 #
 
 # . is current directory, .. is parent directory
-SRCPATH    := ./src ./lib   # where are the source files; use test_??? to run a test directory
+SRCPATH    := ./src/lib ./src/common ./src/mHM ./src/mRM # where are the source files
 PROGPATH   := .             # where shall be the executable
 CONFIGPATH := make.config   # where are the $(system).$(compiler) files
 MAKEDPATH  := $(CONFIGPATH) # where is the make.d.sh script
@@ -184,7 +184,7 @@ static   := shared
 # Special compilation flags 
 EXTRA_FCFLAGS  :=
 EXTRA_F90FLAGS := #-C=undefined
-EXTRA_DEFINES  :=
+EXTRA_DEFINES  := -Dmrm2mhm
 EXTRA_INCLUDES :=
 EXTRA_LDFLAGS  :=
 EXTRA_LIBS     :=
@@ -239,15 +239,15 @@ DOXCONFIG  := $(abspath $(DOXCONFIG:~%=${HOME}%))
 
 # Program names
 # Only Prog or Lib
-ifeq (,$(strip $(PROGNAME)))
-    ifeq (,$(strip $(LIBNAME)))
+ifeq ($(strip $(PROGNAME)),)
+    ifeq ($(strip $(LIBNAME)),)
         $(error Error: PROGNAME or LIBNAME must be given.)
     else
         islib   := True
         LIBNAME := $(PROGPATH)/$(strip $(LIBNAME))
     endif
 else
-    ifeq (,$(strip $(LIBNAME)))
+    ifeq ($(strip $(LIBNAME)),)
         islib    := False
         PROGNAME := $(PROGPATH)/$(strip $(PROGNAME))
     else
@@ -262,8 +262,8 @@ MAKEDEPSPROG := $(MAKEDPATH)/$(MAKEDSCRIPT)
 # but some targets should not recompile but be aware of the source files, e.g. clean
 iphony    := False
 iphonyall := False
-ifneq (,$(strip $(MAKECMDGOALS)))
-    ifneq (,$(findstring /$(strip $(MAKECMDGOALS))/,/check/ /test/ /html/ /latex/ /pdf/ /doxygen/))
+ifneq ($(strip $(MAKECMDGOALS)),)
+    ifneq ($(findstring /$(strip $(MAKECMDGOALS))/,/check/ /test/ /html/ /latex/ /pdf/ /doxygen/),)
         iphony := True
     endif
     ifneq (,$(findstring $(strip $(MAKECMDGOALS))/,/check/ /test/ /html/ /latex/ /pdf/ /doxygen/ /cleancheck/ /cleantest/ /checkclean/ /testclean/ /info/ /clean/ /cleanclean/))
@@ -287,7 +287,7 @@ endif
 # Include compiler alias on specific systems, e.g. nag for nag53
 icompiler := $(compiler)
 ALIASINC  := $(CONFIGPATH)/$(system).alias
-ifneq ("$(wildcard $(ALIASINC))","")
+ifneq ($(strip $(ALIASINC)),)
     include $(ALIASINC)
 endif
 
@@ -400,7 +400,7 @@ endif
 # Include the individual configuration files
 MAKEINC := $(addsuffix /$(system).$(icompiler), $(abspath $(CONFIGPATH:~%=${HOME}%)))
 #$(info "MAKEINC: "$(MAKEINC))
-ifeq ("$(wildcard $(MAKEINC))","")
+ifeq ($(strip $(MAKEINC)),)
     $(error Error: '$(MAKEINC)' not found.)
 endif
 include $(MAKEINC)
@@ -422,12 +422,21 @@ endif
 
 # --- COMPILER ---------------------------------------------------
 ifneq (,$(findstring $(icompiler),$(gnucompilers)))
-    ifeq ("$(wildcard $(GFORTRANDIR)*)","")
-        $(error Error: GFORTRAN path '$(GFORTRANDIR)' not found.)
+    ifneq ($(strip $(GFORTRANLIB)),)
+        GFLIB := $(GFORTRANLIB)
+    else
+        ifneq ($(strip $(GFORTRANDIR)),)
+            GFLIB := $(GFORTRANDIR)/lib
+        else
+            ifneq ($(strip $(GNULIB)),)
+                GFLIB := $(GNULIB)
+            else
+                $(error Error: GFORTRAN path not found.)
+            endif
+        endif
     endif
-    GFORTRANLIB ?= $(GFORTRANDIR)/lib
-    iLIBS       += -L$(GFORTRANLIB) -lgfortran
-    RPATH       += -Wl,-rpath,$(GFORTRANLIB)
+    iLIBS       += -L$(GFLIB) -lgfortran
+    RPATH       += -Wl,-rpath,$(GFLIB)
 endif
 
 # --- LINKER ---------------------------------------------------
@@ -440,7 +449,7 @@ endif
 
 # --- IMSL ---------------------------------------------------
 ifneq (,$(findstring $(imsl),vendor imsl))
-    ifeq ("$(wildcard $(IMSLDIR)*)","")
+    ifeq ($(strip $(IMSLDIR)),)
         $(error Error: IMSL path '$(IMSLDIR)' not found.)
     endif
     IMSLINC ?= $(IMSLDIR)/include
@@ -499,7 +508,7 @@ endif
 # --- MKL ---------------------------------------------------
 ifneq (,$(findstring $(mkl),mkl mkl95))
     ifeq ($(mkl),mkl95) # First mkl95 then mkl for .mod files other then intel
-        ifeq ("$(wildcard $(MKL95DIR)*)","")
+        ifeq ($(strip $(MKL95DIR)),)
             $(error Error: MKL95 path '$(MKL95DIR)' not found.)
         endif
         MKL95INC ?= $(MKL95DIR)/include
@@ -518,7 +527,7 @@ ifneq (,$(findstring $(mkl),mkl mkl95))
         endif
     endif
 
-    ifeq ("$(wildcard $(MKLDIR)*)","")
+    ifeq ($(strip $(MKLDIR)),)
         $(error Error: MKL path '$(MKLDIR)' not found.)
     endif
     MKLINC ?= $(MKLDIR)/include
@@ -553,7 +562,7 @@ endif
 
 # --- NETCDF ---------------------------------------------------
 ifneq (,$(findstring $(netcdf),netcdf3 netcdf4))
-    ifeq ("$(wildcard $(NCDIR)*)","")
+    ifeq ($(strip $(NCDIR)),)
         $(error Error: NETCDF path '$(NCDIR)' not found.)
     endif
     NCINC ?= $(strip $(NCDIR))/include
@@ -572,7 +581,7 @@ ifneq (,$(findstring $(netcdf),netcdf3 netcdf4))
     endif
     iLIBS += -lnetcdf
 
-    ifneq ("$(wildcard $(NCFDIR)*)","")
+    ifneq ($(strip $(NCFDIR)),)
         NCFINC ?= $(strip $(NCFDIR))/include
         NCFLIB ?= $(strip $(NCFDIR))/lib
 
@@ -618,14 +627,14 @@ endif
 
 # --- PROJ --------------------------------------------------
 ifeq ($(proj),true)
-    ifeq ("$(wildcard $(PROJ4DIR)*)","")
+    ifeq ($(strip $(PROJ4DIR)),)
         $(error Error: PROJ4 path '$(PROJ4DIR)' not found.)
     endif
     PROJ4LIB ?= $(PROJ4DIR)/lib
     iLIBS    += -L$(PROJ4LIB) -lproj
     RPATH    += -Wl,-rpath=$(PROJ4LIB)
 
-    ifeq ("$(wildcard $(FPROJDIR)*)","")
+    ifeq ($(strip $(FPROJDIR)),)
         $(error Error: FPROJ path '$(FPROJDIR)' not found.)
     endif
     FPROJINC ?= $(FPROJDIR)/include
@@ -644,9 +653,9 @@ endif
 ifeq ($(lapack),true)
     # Mac OS X uses frameworks
     ifneq (,$(findstring $(iOS),Darwin))
-        iLIBS += -framework veclib
+        iLIBS += -framework Accelerate
     else
-        ifeq ("$(wildcard $(LAPACKDIR)*)","")
+        ifeq ($(strip $(LAPACKDIR)),)
             $(error Error: LAPACK path '$(LAPACKDIR)' not found.)
         endif
         LAPACKLIB ?= $(LAPACKDIR)/lib
@@ -662,7 +671,7 @@ MPI_FCFLAGS  :=
 MPI_CFLAGS   :=
 MPI_LDFLAGS  :=
 ifeq ($(mpi),true)
-    ifeq ("$(wildcard $(MPIDIR)*)","")
+    ifeq ($(strip $(MPIDIR)),)
         $(error Error: MPI path '$(MPIDIR)' not found.)
     endif
     MPIINC   ?= $(MPIDIR)/include
@@ -684,10 +693,10 @@ endif
 
 # --- DOXYGEN ---------------------------------------------------
 ifneq (,$(filter doxygen html latex pdf, $(MAKECMDGOALS)))
-    ifneq ("$(wildcard $(DOXCONFIG))","")
+    ifneq ($(strip $(DOXCONFIG)),)
         ISDOX := True
         ifneq ($(DOXYGENDIR),)
-            ifeq ("$(wildcard $(DOXYGENDIR)*)","")
+            ifeq ($(strip $(DOXYGENDIR)),)
                 $(error Error: doxygen not found in $(strip $(DOXYGENDIR)).)
             else
                 DOXYGEN := $(strip $(DOXYGENDIR))/"doxygen"
@@ -700,7 +709,7 @@ ifneq (,$(filter doxygen html latex pdf, $(MAKECMDGOALS)))
             endif
         endif
         ifneq ($(DOTDIR),)
-            ifeq ("$(wildcard $(DOTDIR)*)","")
+            ifeq ($(strip $(DOTDIR)),)
                 $(error Error: dot not found in $(strip $(DOTDIR)).)
             else
                 DOTPATH := $(strip $(DOTDIR))
@@ -748,7 +757,7 @@ else
     ISDOX := False
 endif
 
-# --- INTEL ERROR ---------------------------------------------------
+# --- INTEL F2003 REALLOC-LHS ---------------------------------------
 ifneq (,$(findstring $(icompiler),$(intelcompilers)))
     F90FLAGS1 = $(subst -assume realloc-lhs,,"$(F90FLAGS)")
 else
@@ -785,10 +794,7 @@ ifeq (,$(findstring $(iOS),Darwin))
     LIBS += $(iRPATH)
 endif
 
-# The Absoft compiler needs that ABSOFT is set to the Absoft base path
-ifneq ($(ABSOFT),)
-    export ABSOFT
-endif
+# export LD_LIBRARY_PATH of make.config files
 ifneq ($(LDPATH),)
     empty:=
     space:= $(empty) $(empty)
@@ -851,7 +857,7 @@ ifneq (,$(findstring $(icompiler),gnu41 gnu42))
 	ssrc=$$(basename $$(echo $(SRCS) | tr ' ' '\n' | sed -n $${nobj}p)) ; \
 	tmp=$@.$$(echo $${src} | sed 's/.*\.//') ; \
 	doex=$$(echo $(INTEL_EXCLUDE) | grep -i "$${ssrc}" -) ; \
-	f90flag=$$(if [[ "$${doex}" == "" ]] ; then echo "$(F90FLAGS)"; else echo "$(F90FLAGS1)" ; fi) ; \
+	f90flag=$$(if [[ "$${doex}" != "" ]] ; then echo "$(F90FLAGS1)" ; else echo "$(F90FLAGS)" ; fi) ; \
 	echo "$(F90) -E $(DEFINES) $(INCLUDES) $${f90flag} $${src} | sed 's/^#[[:blank:]]\{1,\}[[:digit:]]\{1,\}.*$$//' > $${tmp}" ; \
 	$(F90) -E $(DEFINES) $(INCLUDES) $${f90flag} $${src} | sed 's/^#[[:blank:]]\{1,\}[[:digit:]]\{1,\}.*$$//' > $${tmp} ; \
 	echo "$(F90) $(DEFINES) $(INCLUDES) $(MPI_F90FLAGS) $(F90FLAGS) $(MODFLAG)$(dir $@) -c $${tmp} -o $@" ; \
@@ -862,7 +868,7 @@ else
 	src=$$(echo $(SRCS) | tr ' ' '\n' | sed -n $${nobj}p) ; \
 	ssrc=$$(basename $$(echo $(SRCS) | tr ' ' '\n' | sed -n $${nobj}p)) ; \
 	doex=$$(echo $(INTEL_EXCLUDE) | grep -i "$${ssrc}" -) ; \
-	f90flag=$$(if [[ "$${doex}" == "" ]] ; then echo "$(F90FLAGS)"; else echo "$(F90FLAGS1)" ; fi) ; \
+	f90flag=$$(if [[ "$${doex}" != "" ]] ; then echo "$(F90FLAGS1)" ; else echo "$(F90FLAGS)" ; fi) ; \
 	echo $(F90) $(DEFINES) $(INCLUDES) $(MPI_F90FLAGS) $${f90flag} $(MODFLAG)$(dir $@) -c $${src} -o $@ ; \
 	$(F90) $(DEFINES) $(INCLUDES) $(MPI_F90FLAGS) $${f90flag} $(MODFLAG)$(dir $@) -c $${src} -o $@
 endif
@@ -892,7 +898,7 @@ $(COBJS):
 
 # Helper Targets
 clean:
-	rm -f $(DOBJS) $(FDOBJS) $(CDOBJS) $(OBJS) $(FOBJS) $(COBJS) $(addsuffix /*.mod, $(OBJPATH))
+	rm -f $(DOBJS) $(FDOBJS) $(CDOBJS) $(OBJS) $(FOBJS) $(COBJS) $(addsuffix /*.mod, $(OBJPATH)) $(addsuffix /*.pre, $(SRCPATH))
 ifeq (False,$(islib))
 	rm -f "$(PROGNAME)"
 endif
@@ -1036,7 +1042,7 @@ info:
 	@echo "RANLIB    = $(RANLIB)"
 	@echo ""
 	@echo "Configured compilers on $(system): $(compilers)"
-ifneq ("$(wildcard $(ALIASINC))","")
+ifneq ($(strip $(ALIASINC)),)
 	@echo ""
 	@echo "Compiler aliases for $(system)"
 	@sed -n '/ifneq (,$$(findstring $$(compiler)/,/endif/p' $(ALIASINC) | \
