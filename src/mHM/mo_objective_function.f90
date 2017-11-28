@@ -664,7 +664,7 @@ CONTAINS
                standard_score(sm_opti(iCell,:), mask=L1_sm_mask(iCell,:)), mask=L1_sm_mask(iCell,:))
 
        end do
-       print*, iBasin,  objective_sm_sse_standard_score_basin
+       ! print*, iBasin,  objective_sm_sse_standard_score_basin
        ! calculate average soil moisture correlation over all basins with power law
        ! basins are weighted equally ( 1 / real(nBasin,dp))**6
        objective_sm_sse_standard_score = objective_sm_sse_standard_score + &
@@ -741,7 +741,7 @@ CONTAINS
     use mo_temporal_aggregation, only: day2mon_average
     use mo_standard_score,       only: classified_standard_score
     use mo_string_utils,         only: num2str
-#ifdef mrm2mhm
+#ifdef MRM2MHM
     use mo_mrm_objective_function_runoff, only: extract_runoff
 #endif
 
@@ -868,7 +868,7 @@ CONTAINS
     !--------------------------------------------
     !! RUNOFF
     !--------------------------------------------
-#ifdef mrm2mhm
+#ifdef MRM2MHM
     nGaugesTotal = size(runoff, dim=2)
     allocate( kge_q(nGaugesTotal))
     kge_q(:) = nodata_dp
