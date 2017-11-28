@@ -129,7 +129,7 @@
 !       Matthias Cuntz & Juliane Mai, Mar 2014 - Likelihood Kavetski uses 2 more parameters for the error model
 !                                                global_parameters -> local_parameters
 !                       Rohini Kumar, Apr 2014 - implementation of the mHM run on a single cell
-!                                                configuration that too in the routing mode.
+!                                                configuration also for the routing mode.
 !                                              - run mHM at the input data level i.e. L0 grid
 !                       Rohini Kumar, May 2014 - model run on a regular lat-lon grid or
 !                                                on a regular X-Y coordinate system
@@ -141,6 +141,8 @@
 !                     Stephan Thober, Oct 2015 - reorganized optimization (now compatible with mRM)
 !      Oldrich Rakovec, Rohini Kumar, Oct 2015 - added reading of basin averaged TWS and objective function 15
 !                                                for simultaneous calibration based on runoff and TWS
+!                       Rohini Kumar, Mar 2016 - options to handle different soil databases
+!                                                modified MPR to included soil horizon specific properties/parameters
 !
 ! --------------------------------------------------------------------------
 
@@ -159,9 +161,9 @@ PROGRAM mhm_driver
        dirMorpho, dirLCover,  dirPrecipitation,              &      ! directories
        dirTemperature, dirOut,                               &      ! directories
        dirReferenceET,                                       &      ! PET input path  if process 5 is 'PET is input' (case 0)
-       dirMinTemperature, dirMaxTemperature,                 &      ! PET input paths if process 5 is HarSam  (case 1)
-       dirNetRadiation,                                      &      ! PET input paths if process 5 is PrieTay (case 2)
-       dirabsVapPressure, dirwindspeed,                      &      ! PET input paths if process 5 is PenMon  (case 3)
+       dirMinTemperature, dirMaxTemperature,                 &      ! PET input paths if process 5 is Hargreaves-Samani  (case 1)
+       dirNetRadiation,                                      &      ! PET input paths if process 5 is Priestley-Taylor (case 2)
+       dirabsVapPressure, dirwindspeed,                      &      ! PET input paths if process 5 is Penman-Monteith  (case 3)
        dirgridded_LAI,                                       &      ! directories
        simPer,                                               &      ! simulation period
        NTSTEPDAY,                                            &      ! number of timesteps per day (former: NAGG)
@@ -265,14 +267,14 @@ PROGRAM mhm_driver
      call message('    Precipitation directory:    ',   trim(dirPrecipitation(ii)  ))
      call message('    Temperature directory:      ',   trim(dirTemperature(ii)  ))
      select case (processMatrix(5,1))
-     case(0)
+     case(0) ! PET is input
         call message('    PET directory:              ', trim(dirReferenceET(ii)  ))
-     case(1)
+     case(1) ! Hargreaves-Samani
         call message('    Min. temperature directory: ', trim(dirMinTemperature(ii)  ))
         call message('    Max. temperature directory: ', trim(dirMaxTemperature(ii)  ))
-     case(2)
+     case(2) ! Priestely-Taylor
         call message('    Net radiation directory:    ', trim(dirNetRadiation(ii) ))
-     case(3)
+     case(3) ! Penman-Monteith
         call message('    Net radiation directory:    ', trim(dirNetRadiation(ii) ))
         call message('    Abs. vap. press. directory: ', trim(dirabsVapPressure(ii)  ))
         call message('    Windspeed directory:        ', trim(dirwindspeed(ii)  ))
@@ -382,29 +384,20 @@ PROGRAM mhm_driver
   iTimer = iTimer + 1
   call message()
   if ( optimize ) then
-#ifdef mrm2mhm
-     ! call optimization against only runoff (no other variables)
-     if ((opti_function .eq. 1) .or. &
-         (opti_function .eq. 2) .or. &
-         (opti_function .eq. 3) .or. &
-         (opti_function .eq. 4) .or. &
-         (opti_function .eq. 5) .or. &
-         (opti_function .eq. 6) .or. &
-         (opti_function .eq. 7) .or. &
-         (opti_function .eq. 8) .or. &
-         (opti_function .eq. 9) .or. &
-         (opti_function .eq. 14)) &
-         call optimization(single_objective_runoff, dirConfigOut, funcBest, maskpara)
-#endif
 
-     ! call optimization for other variables
-     if ((opti_function .eq. 10) .or. &
-         (opti_function .eq. 11) .or. &
-         (opti_function .eq. 12) .or. &
-         (opti_function .eq. 13) .or. &
-         (opti_function .eq. 15) .or. &
-         (opti_function .eq. 17)) &
-         call optimization(objective, dirConfigOut, funcBest, maskpara)
+     select case(opti_function) 
+#ifdef mrm2mhm
+     case(1:9,14) 
+        ! call optimization against only runoff (no other variables)
+        call optimization(single_objective_runoff, dirConfigOut, funcBest, maskpara)
+#endif
+     case(10:13,15,17) 
+        ! call optimization for other variables
+        call optimization(objective, dirConfigOut, funcBest, maskpara)
+     case default 
+        call message('mhm_driver: 1: The kind (SO or MO) is not specified for the given objective function!') 
+        stop 
+     end select
 
      ! write a file with final objective function and the best parameter set
      call write_optifile(funcbest, global_parameters(:,3), global_parameters_name(:))

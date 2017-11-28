@@ -110,6 +110,8 @@ CONTAINS
   !>        \date Aug 2015
   !         Modified, Sep 2015, Stephan Thober - using arguments instead of global variables
   !                   Sep 2015, Stephan Thober - added variables for routing resolution higher than hydrologic resolution
+  !                   May 2016, Stephan Thober - added check whether gauge is actually inside modelling domain
+  !                                              before copying simulated runoff
 
   subroutine mRM_routing( &
        ! input variables =========================================================
@@ -128,6 +130,7 @@ CONTAINS
        L11_netPerm, & ! L11 routing order
        L11_fromN, & ! L11 source grid cell order
        L11_toN, & ! L11 target grid cell order
+       L11_nOutlets, & ! number of outlets
        timestep, & ! simulation timestep in [h]
        nNodes, & ! number of nodes
        nInflowGauges, & ! number of inflow gauges
@@ -151,9 +154,10 @@ CONTAINS
        ! optional input variables ================================================
        do_mpr_routing &
        )
-    use mo_mrm_net_startup, only: L11_fraction_sealed_floodplain
-    use mo_mrm_mpr, only: reg_rout
+    use mo_mrm_constants, only: nodata_i4
     use mo_mrm_global_variables, only: is_start
+    use mo_mrm_mpr, only: reg_rout
+    use mo_mrm_net_startup, only: L11_fraction_sealed_floodplain
 
     implicit none
     ! input variables =========================================================
@@ -172,6 +176,7 @@ CONTAINS
     integer(i4), dimension(:), intent(in) :: L11_netPerm ! L11 routing order
     integer(i4), dimension(:), intent(in) :: L11_fromN ! L11 source grid cell order
     integer(i4), dimension(:), intent(in) :: L11_toN ! L11 target grid cell order
+    integer(i4),               intent(in) :: L11_nOutlets ! L11 number of outlets/sinks
     integer(i4), intent(in) :: timestep ! simulation timestep in [h]
     integer(i4), intent(in) :: nNodes ! number of nodes
     integer(i4), intent(in) :: nInflowGauges ! number of inflow gauges
@@ -218,7 +223,7 @@ CONTAINS
        ! --> Note: L11_fraction_sealed_floodplain routine is called
        !           only in case when routing process is ON
        !-------------------------------------------------------------------
-       CALL L11_fraction_sealed_floodplain( nNodes-1, &
+       CALL L11_fraction_sealed_floodplain( nNodes - L11_nOutlets, &
             L0_LCover, &
             L0_floodPlain,       &
             L0_areaCell, &
@@ -228,8 +233,8 @@ CONTAINS
        ! for a single node model run
        if( nNodes .GT. 1) then
           call reg_rout( global_routing_param, &
-               L11_length, L11_slope, L11_FracFPimp(:nNodes-1), &
-               real(timeStep,dp), L11_C1(:nNodes-1), L11_C2(:nNodes-1))
+               L11_length, L11_slope, L11_FracFPimp(:nNodes - L11_nOutlets), &
+               real(timeStep,dp), L11_C1(:nNodes - L11_nOutlets), L11_C2(:nNodes - L11_nOutlets))
        end if 
     end if
 
@@ -249,7 +254,7 @@ CONTAINS
     ! for a single node model run
     if( nNodes .GT. 1) then
        ! routing of water within river reaches
-       call L11_routing( nNodes, nNodes-1, &
+       call L11_routing( nNodes, nNodes - L11_nOutlets, &
             L11_netPerm, &
             L11_fromN, & ! Intent IN
             L11_toN, & ! Intent IN
@@ -275,7 +280,7 @@ CONTAINS
     !        ordered corresponing to gauge%Q(:,:)
     !----------------------------------------------------------------------
     do gg = 1, nGauges
-       GaugeDischarge(gaugeIndexList(gg)) = L11_Qmod(gaugeNodeList(gg))
+       if (gaugeNodeList(gg) .ne. nodata_i4) gaugedischarge(gaugeIndexList(gg)) = L11_Qmod(gaugeNodeList(gg))
     end do
     
   end subroutine mRM_routing

@@ -191,7 +191,7 @@ EXTRA_LIBS     :=
 EXTRA_CFLAGS   :=
 
 # Intel F2003 -assume realloc-lhs
-INTEL_EXCLUDE  := mo_multi_param_reg.f90 #mo_read_wrapper.f90
+INTEL_EXCLUDE  := mo_multi_param_reg.f90 mo_mpr_soilmoist.f90 #mo_read_wrapper.f90
 
 # Exclude certin files from compilation
 EXCLUDE_FILES  :=
@@ -373,7 +373,7 @@ CC       :=
 CFLAGS   := $(EXTRA_CFLAGS)
 CPP      :=
 DEFINES  := $(EXTRA_DEFINES)
-INCLUDES := $(EXTRA_INCLUDES)
+INCLUDES := $(EXTRA_INCLUDES) $(addprefix -I,$(SRCPATH))
 # and link, and therefore set below
 LD       :=
 LDFLAGS  := $(EXTRA_LDFLAGS)

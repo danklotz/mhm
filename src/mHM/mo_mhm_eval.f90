@@ -90,6 +90,7 @@ CONTAINS
   !                   David Schaefer,       Aug 2015 - changed to new netcdf-writing scheme
   !                   Stephan Thober,       Sep 2015 - updated mrm_routing call
   !          Oldrich Rakovec, Rohini Kumar, Oct 2015 - added optional output for basin averaged TWS
+  !                           Rohini Kumar, Mar 2016 - changes for handling multiple soil database options
 
   SUBROUTINE mhm_eval(parameterset, runoff, sm_opti, basin_avg_tws, neutrons_opti)
 
@@ -102,6 +103,9 @@ CONTAINS
     use mo_restart,             only : read_restart_states      ! read initial values of variables
     use mo_meteo_forcings,      only : prepare_meteo_forcings_data
     use mo_write_fluxes_states, only : OutputDataset
+#ifdef pgiFortran154
+    use mo_write_fluxes_states, only : newOutputDataset
+#endif
     use mo_global_variables,    only : &
          nTstepDay,                                          &
          timeStep_model_outputs, outputFlxState,             &  ! definition which output to write
@@ -112,6 +116,7 @@ CONTAINS
          nSoilHorizons_mHM, NTSTEPDAY, timeStep,             &
          LCyearId, LAIUnitList, LAILUT,                      &
          GeoUnitList, GeoUnitKar, soilDB,                    &
+         iFlag_soilDB,                                       & ! options to handle different types of soil databases
          L0_Id, L0_soilId,                                   &
          L0_LCover, L0_asp, L0_LCover_LAI, L0_geoUnit,       &
          soilDB, L1_nTCells_L0,                              &
@@ -168,6 +173,7 @@ CONTAINS
          L11_netPerm,                & ! routing order at L11
          L11_fromN,                  & ! link source at L11
          L11_toN,                    & ! link target at L11
+         L11_nOutlets,               & ! number of outlets at the L11
          basin_mrm,                  & ! basin_mrm structure
          InflowGauge,                &
          outputFlxState_mrm,         &
@@ -282,8 +288,6 @@ CONTAINS
     ! add other optionals...
 
 
-
-
     !-------------------------------------------------------------------
     ! Initalize State variables either to the default value or
     ! from the restrat_files.
@@ -356,7 +360,6 @@ CONTAINS
        hour = -timestep
        iGridLAI_TS = 0
        do tt = 1, nTimeSteps
-
           if ( timeStep_model_inputs(ii) .eq. 0_i4 ) then
              ! whole meteorology is already read
 
@@ -373,7 +376,7 @@ CONTAINS
              e_meteo = e1 - s1 + 1
              ! time step for meteorological variable (daily values)
              iMeteoTS = ceiling( real(tt,dp) / real(NTSTEPDAY,dp) ) &
-                  - ( readPer%julStart - simPer(ii)%julStart )
+                        - ( readPer%julStart - simPer(ii)%julStart )
           end if
 
           hour = mod(hour+timestep, 24)
@@ -389,13 +392,13 @@ CONTAINS
           case(0) ! PET is input
              s_p5 = (/s_meteo,       1,       1,       1,       1,       1/)
              e_p5 = (/e_meteo,       1,       1,       1,       1,       1/)
-          case(1) ! HarSam
+          case(1) ! Hargreaves-Samani
              s_p5 = (/s_meteo, s_meteo, s_meteo,       1,       1,       1/)
              e_p5 = (/e_meteo, e_meteo, e_meteo,       1,       1,       1/)
-          case(2) ! PrieTay
+          case(2) ! Priestely-Taylor
              s_p5 = (/s_meteo,       1,       1, s_meteo,       1,       1/)
              e_p5 = (/e_meteo,       1,       1, e_meteo,       1,       1/)
-          case(3) ! PenMon
+          case(3) ! Penman-Monteith
              s_p5 = (/s_meteo,       1,       1, s_meteo, s_meteo, s_meteo/)
              e_p5 = (/e_meteo,       1,       1, e_meteo, e_meteo, e_meteo/)
           end select
@@ -405,11 +408,11 @@ CONTAINS
           !              (/     pet,     tmin,     tmax,   netrad,  absVapP,windspeed /)
           case(0) ! PET is input
              iMeteo_p5 = (/iMeteoTS,        1,        1,        1,        1,        1 /)
-          case(1) ! HarSam
+          case(1) ! Hargreaves-Samani
              iMeteo_p5 = (/iMeteoTS, iMeteoTS, iMeteoTS,        1,        1,        1 /)
-          case(2) ! PrieTay
+          case(2) ! Priestely-Taylor
              iMeteo_p5 = (/iMeteoTS,        1,        1, iMeteoTS,        1,        1 /)
-          case(3) ! PenMon
+          case(3) ! Penman-Monteith
              iMeteo_p5 = (/iMeteoTS,        1,        1, iMeteoTS, iMeteoTS, iMeteoTS /)
           end select
 
@@ -471,10 +474,11 @@ CONTAINS
                timeStep_LAI_input, year_counter, month_counter, day_counter,                & ! IN C
                tt, newTime-0.5_dp, processMatrix, c2TSTu, HorizonDepth_mHM,                 & ! IN C
                nCells, nSoilHorizons_mHM, real(NTSTEPDAY,dp), mask0,                        & ! IN C
+               iFlag_soilDB,                                                                & ! IN C
                parameterset,                                                                & ! IN P
                LCyearId(year,ii), GeoUnitList, GeoUnitKar, LAIUnitList, LAILUT,             & ! IN L0
                L0_slope_emp(s0:e0), L0_Latitude(s0:e0),                                     & ! IN L0
-               L0_Id(s0:e0), L0_soilId(s0:e0), L0_LCover_LAI(s0:e0),                        & ! IN L0
+               L0_Id(s0:e0), L0_soilId(s0:e0,:), L0_LCover_LAI(s0:e0),                        & ! IN L0
                L0_LCover(s0:e0, LCyearId(year,ii)), L0_asp(s0:e0), LAI(s0:e0),              & ! IN L0
                L0_geoUnit(s0:e0),                                                           & ! IN L0
                soilDB%is_present, soilDB%nHorizons, soilDB%nTillHorizons,                   & ! IN L0
@@ -542,6 +546,7 @@ CONTAINS
                   L11_netPerm(s11:e11), & ! routing order at L11
                   L11_fromN(s11:e11), & ! link source at L11
                   L11_toN(s11:e11), & ! link target at L11
+                  L11_nOutlets(ii), & ! number of outlets
                   timeStep, & ! simulate timestep in [h]
                   basin_mrm%L11_iEnd(ii) - basin_mrm%L11_iStart(ii) + 1, & ! number of Nodes
                   basin_mrm%nInflowGauges(ii), &
@@ -607,7 +612,11 @@ CONTAINS
 
                 if ( tIndex_out .EQ. 1 ) then
                    L1_fNotSealed = 1.0_dp - L1_fSealed
+#ifdef pgiFortran154
+                   nc = newOutputDataset(ii, mask1)
+#else
                    nc = OutputDataset(ii, mask1)
+#endif
                 end if
 
                 call nc%updateDataset( &
@@ -755,7 +764,7 @@ CONTAINS
        ! deallocate space for temprory LAI fields
        deallocate(LAI)
        ! deallocate TWS field temporal variable
-       if (allocated (TWS_field) ) deallocate(TWS_field)
+       if (allocated(TWS_field) ) deallocate(TWS_field)
 
     end do !<< BASIN LOOP
 

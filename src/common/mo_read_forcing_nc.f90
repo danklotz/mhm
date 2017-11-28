@@ -125,13 +125,13 @@ contains
     ! LATITUDE dimension
     type(period),                                      intent(in)  :: periode   ! time period
     character(len=*),                                  intent(in)  :: varName   ! name of NetCDF variable
-    real(dp), dimension(:,:,:), allocatable,           intent(out) :: data      ! data read in
     logical, dimension(:,:),                           intent(in)  :: mask      ! mask of valid data fields
     real(dp),                                optional, intent(in)  :: lower     ! lower bound for data points
     real(dp),                                optional, intent(in)  :: upper     ! upper bound for data points
     integer(i4),                             optional, intent(in)  :: nctimestep ! -1: daily (default); -2:monthly; -3:yearly
     logical,                                 optional, intent(in)  :: nocheck    ! .TRUE. if check for nodata values deactivated
     !                                                                            ! default = .FALSE. - check is done
+    real(dp), dimension(:,:,:), allocatable,           intent(out) :: data      ! data read in
     logical, dimension(:,:,:), allocatable,  optional, intent(out) :: maskout    ! mask of data to read
 
     !
@@ -230,8 +230,8 @@ contains
     ! alloc and read
     allocate(data(dimen(1), dimen(2), dim3))
     call Get_NcVar(trim(fName), trim(varName), data, &
-         start = (/ 1_i4, 1_i4, ncdim3start /), &
-         a_count = (/ dimen(1), dimen(2), dim3 /) )
+              start = (/ 1_i4, 1_i4, ncdim3start /), &
+            a_count = (/ dimen(1), dimen(2), dim3 /) )
 
     ! save output mask if optional maskout is given
     if (present(maskout)) then
@@ -257,16 +257,22 @@ contains
                   trim(varName),                                           &
                   '" are lower than ', trim(num2str(lower,'(F7.2)')) )
              call message('          at timestep  : ', trim(num2str(i)))
+             call message('File: ', trim(fName))
+             call message('Minval at timestep: ', trim(num2str(minval(data(:,:,i)),'(F7.2)')))
+             call message('Total minval: ', trim(num2str(minval(data(:,:,:)),'(F7.2)')))
              stop
           end if
        end if
 
        if (present(upper)) then
           if ( any( (data(:,:,i) .gt. upper) .AND. mask(:,:) )  ) then
-             call message('***ERROR: read_forcing_nc: values in variable"',  &
+             call message('***ERROR: read_forcing_nc: values in variable "',  &
                   trim(varName),                                           &
                   '" are greater than ', trim(num2str(upper,'(F7.2)')) )
              call message('          at timestep  : ', trim(num2str(i)))
+             call message('File: ', trim(fName))
+             call message('Maxval at timestep: ', trim(num2str(maxval(data(:,:,i)),'(F7.2)')))
+             call message('Total maxval: ', trim(num2str(maxval(data(:,:,:)),'(F7.2)')))
              stop
           end if
        end if

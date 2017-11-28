@@ -143,8 +143,9 @@ module mo_mrm_global_variables
      logical,     dimension(:,:), allocatable :: InflowGaugeHeadwater ! if headwater cells of inflow gauge will be considered
 
      ! basin outlet
-     integer(i4), dimension(:), allocatable :: L0_rowOutlet   ! Outlet location in L0 
-     integer(i4), dimension(:), allocatable :: L0_colOutlet   ! Outlet location in L0 
+     integer(i4), dimension(:),   allocatable :: L0_Noutlet
+     integer(i4), dimension(:,:), allocatable :: L0_rowOutlet   ! Outlet locations in L0 
+     integer(i4), dimension(:,:), allocatable :: L0_colOutlet   ! Outlet locations in L0 
 
      ! for remapping                                           
      integer(i4), dimension(:), allocatable :: L0_iStart      ! Starting cell index of a given basin at L0
@@ -232,6 +233,7 @@ module mo_mrm_global_variables
   real(dp),    public, dimension(:), allocatable :: L11_areaCell ! [km2] Effective area of cell at this level
   integer(i4), public, dimension(:), allocatable :: L11_Id ! Ids of grid at level-11           
   integer(i4), public, dimension(:), allocatable :: L11_fDir ! Flow direction (standard notation)
+  integer(i4), public, dimension(:), allocatable :: L11_nOutlets
 
   ! Reference
   ! dim1 = number grid cells L11
@@ -261,8 +263,8 @@ module mo_mrm_global_variables
   real(dp), public, dimension(:,:), allocatable   :: L11_qTR         !          Routed outflow leaving a node
 
   real(dp), public, dimension(:), allocatable     :: L11_FracFPimp   ! [1]     Fraction of the flood plain with
-  integer(i4), public, dimension(:), allocatable  :: L11_fromN       !         From node 
-  integer(i4), public, dimension(:), allocatable  :: L11_toN         !         To node
+  integer(i4), public, dimension(:), allocatable  :: L11_fromN       !         From node (sinks are at the end)
+  integer(i4), public, dimension(:), allocatable  :: L11_toN         !         To node (sinks are at the end)
   integer(i4), public, dimension(:), allocatable  :: L11_netPerm     !         Routing sequence (permutation of L11_rOrder)
   integer(i4), public, dimension(:), allocatable  :: L11_fRow        !         From row in L0 grid 
   integer(i4), public, dimension(:), allocatable  :: L11_fCol        !         From col in L0 grid

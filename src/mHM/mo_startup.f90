@@ -90,12 +90,17 @@ CONTAINS
   !                  Stephan Thober, Jun 2014 - copied L2 initialization from mo_meteo_forcings
   !                  Stephan Thober, Jun 2014 - updated flag for read_restart
   !                  Stephan Thober, Aug 2015 - removed initialisation of routing
+  !                    Rohini Kumar, Mar 2016 - changes for handling multiple soil database options
 
   subroutine initialise(iBasin)
 
     use mo_kind,             only: i4
-    use mo_global_variables, only: soilDB, L0_Basin, &
-         read_restart, perform_mpr, dirRestartIn
+    use mo_global_variables, only: soilDB,       &
+                                   L0_Basin,     &
+                                   read_restart, &
+                                   perform_mpr,  &
+                                   dirRestartIn, &
+                                   iFlag_soilDB               ! options to handle different types of soil databases
     use mo_soil_database,    only: generate_soil_database
     use mo_init_states,      only: variables_alloc
     USE mo_restart,          ONLY: read_restart_config
@@ -109,7 +114,7 @@ CONTAINS
        ! constants initialization
        call constants_init()
        ! soilDB common for all basins
-       call generate_soil_database(soilDB)
+       call generate_soil_database(soilDB, iFlag_soilDB)
     end if
     
     ! L0 and L1 initialization
@@ -252,15 +257,21 @@ CONTAINS
   !                  Rohini  Kumar, Sep 2013 - read input data for routing processes according
   !                & Stephan Thober,           to process_matrix flag
   !                  Stephan Thober, Aug 2015 - moved check of L0 routing variables to mRM
+  !                    Rohini Kumar, Mar 2016 - changes for handling multiple soil database options
 
   subroutine L0_check_input(iBasin)
 
-    use mo_global_variables, only: basin                    , &
+    use mo_global_variables, only: basin,                     &
                                    L0_elev, L0_slope, L0_asp, &
-                                   L0_soilId, L0_geoUnit    , &
-                                   L0_LCover_LAI            , &
-                                   nLCoverScene            , &
-                                   L0_LCover, timeStep_LAI_input
+                                   L0_geoUnit,                &
+                                   L0_soilId,                 & ! soil class ID on input resolution (L0) 
+                                   nSoilHorizons_mHM,         & ! soil horizons info for mHM
+                                   iFlag_soilDB,              & ! options to handle different types of soil databases
+                                   L0_LCover_LAI,             &
+                                   nLCoverScene,              &
+                                   L0_LCover,                 &
+                                   timeStep_LAI_input
+
     use mo_constants,    only: eps_dp
     use mo_message,      only: message, message_text
     use mo_string_utils, only: num2str
@@ -270,7 +281,7 @@ CONTAINS
     integer(i4), intent(in) ::   iBasin
 
     ! local variables
-    integer(i4)                                :: k, n
+    integer(i4)                                :: k, n, nH
 
     ! START CHECKING VARIABLES
     do k = basin%L0_iStart(iBasin), basin%L0_iEnd(iBasin)
@@ -300,12 +311,17 @@ CONTAINS
        end if
 
        ! soil-Id [-]
-       if ( L0_soilId(k) .eq. nodata_i4 ) then
-          message_text = trim(num2str(k,'(I5)'))//','// trim(num2str(iBasin,'(I5)'))
-          call message(' Error: soil id has missing values within the valid masked area at cell in basin ', &
-               trim(message_text) )
-          stop
-       end if
+       nH = 1 !> by default; when iFlag_soilDB = 0
+       if ( iFlag_soilDB .eq. 1 ) nH = nSoilHorizons_mHM
+       ! another option to handle multiple soil horizons properties
+       do n = 1, nH
+          if ( L0_soilId(k,n) .eq. nodata_i4  ) then
+             message_text = trim(num2str(k,'(I5)'))//','// trim(num2str(iBasin,'(I5)'))//','// trim(num2str(n,'(I5)'))
+             call message(' Error: soil id has missing values within the valid masked area at cell in basin and horizon ', &
+                  trim(message_text) )
+             stop
+          end if
+       end do
 
        ! geological-Id [-]
        if ( L0_geoUnit(k) .eq. nodata_i4 ) then
@@ -324,7 +340,6 @@ CONTAINS
              stop
           end if
        end do
-
 
        ! land cover scenes related to LAI
        if(timeStep_LAI_input .EQ. 0) then
@@ -393,10 +408,12 @@ CONTAINS
   !         \author  Rohini Kumar
   !         \date    Jan 2013
   !         Modified
-  !         Rohini Kumar & Matthias Cuntz, May 2014 - cell area calulation based on a regular lat-lon grid or
-  !                                                   on a regular X-Y coordinate system
-  !         Matthias Cuntz,                May 2014 - changed empirical distribution function
-  !                                                   so that doubles get the same value
+  !         Rohini Kumar & Matthias Cuntz,  May 2014 - cell area calulation based on a regular lat-lon grid or
+  !                                                    on a regular X-Y coordinate system
+  !         Matthias Cuntz,                 May 2014 - changed empirical distribution function
+  !                                                    so that doubles get the same value
+  !         Matthias Zink & Matthias Cuntz, Feb 2016 - code speed up due to reformulation of CDF calculation
+  !                           Rohini Kumar, Mar 2016 - changes for handling multiple soil database options
 
   subroutine L0_variable_init(iBasin, soilId_isPresent)
 
@@ -404,12 +421,15 @@ CONTAINS
                                    L0_nCells, L0_cellCoor, &
                                    L0_Id, L0_slope,        &
                                    L0_slope_emp,           &
-                                   L0_soilId, nSoilTypes,  &
+                                   L0_soilId,              & ! soil class ID on input resolution (L0) 
+                                   nSoilHorizons_mHM,      & ! soil horizons info for mHM
+                                   iFlag_soilDB,           & ! options to handle different types of soil databases
+                                   nSoilTypes,             &
                                    L0_areaCell,            &
                                    iFlag_cordinate_sys
     use mo_append,        only: append
-    use mo_orderpack,     only: unirnk
-    use mo_utils,         only: le, eq
+    use mo_orderpack,     only: sort, sort_index
+    use mo_utils,         only: eq
     use mo_constants,     only: TWOPI_dp, RadiusEarth_dp
 
     implicit none
@@ -428,14 +448,11 @@ CONTAINS
     integer(i4)                               :: iStart, iEnd
     logical, dimension(:,:), allocatable      :: mask
 
-    real(dp), dimension(:), allocatable       :: slope_val, slope_emp
+    real(dp), dimension(:), allocatable       :: slope_val, slope_emp, temp
     integer(i4), dimension(:), allocatable    :: slope_sorted_index
-    integer(i4)                               :: nuni
-
-    integer(i4)                               :: i, j, k
+    
+    integer(i4)                               :: i, j, k, nH
     real(dp)                                  :: rdum, degree_to_radian, degree_to_metre
-    logical, dimension(:), allocatable        :: smask
-    real(dp)                                  :: emp
 
     !--------------------------------------------------------
     ! STEPS::
@@ -497,16 +514,51 @@ CONTAINS
     !---------------------------------------------------
     ! Estimate empirical distribution of slope
     !---------------------------------------------------
-    allocate( slope_val(nCells), slope_sorted_index(nCells), slope_emp(nCells), smask(nCells) )
+    allocate( slope_val(nCells), slope_emp(nCells), slope_sorted_index(nCells), temp(nCells))
     slope_val(:) = L0_slope(iStart:iEnd)
+    
+    ! get sorted data and sorted indexes to remap later
+    slope_sorted_index = sort_index(slope_val)
+    call sort(slope_val)
 
     ! empirical distribution of slopes = cumulated number points with slopes that are <= the slope at this point
-    call unirnk(slope_val, slope_sorted_index, nuni) ! unique values = slope_val(slope_sorted_index(1:nuni))
-    do i=1, nuni
-       emp = count(le(slope_val(:), slope_val(slope_sorted_index(i)))) / real(nCells+1,dp) ! # <= unique value
-       where (eq(slope_val(:), slope_val(slope_sorted_index(i)))) slope_emp(:) = emp       ! assign to == unique value
+    ! 
+    !       sorted data                     emp. CDF
+    ! 9 |             x x       7/8 |             x x  
+    !   |                           |                  
+    ! 8 |           x           5/8 |           x      
+    !   |                           |                  
+    ! 5 |     x x x             4/8 |     x x x        
+    !   |                           |                  
+    ! 2 |  x                    1/8 |  x               
+    !   |__________________         |__________________
+    !
+    ! highest slope value = highest rank or No. of data points / (data points + 1) 
+    temp(nCells) = real(nCells, dp) / real(nCells+1,dp)
+
+    ! backward loop to check if the preceding data point has the same slope value
+    do i=nCells-1,1,-1
+       if (eq(slope_val(i), slope_val(i+1))) then
+          ! if yes: assign the same probabitity
+          temp(i) = temp(i+1)
+       else 
+          ! if not: assign rank / (data points + 1)
+          temp(i) = real(i, dp) / real(nCells+1,dp)
+       endif
     end do
 
+    ! EXAMPLE
+    ! in      = [  7, 20, 31, 31, 12, 31, 42 ] 
+    ! sorted  = [  7, 12, 20, 31, 31, 31, 42 ]
+    ! index   = [  1,  5,  2,  3,  4,  6,  7 ]
+    ! temp    = [  1,  2,  3,  6,  6,  6,  7 ]
+    ! out     = [  1,  3,  6,  6,  2,  6,  7 ] / (len(out) + 1 )
+    
+    ! remap probabilities to its position in original data
+    do i = 1, nCells
+       slope_emp(slope_sorted_index(i))  = temp(i)
+    end do
+    
     !--------------------------------------------------------
     ! Start padding up local variables to global variables
     !--------------------------------------------------------
@@ -525,13 +577,17 @@ CONTAINS
        soilId_isPresent(:) = 0
     end if
 
-    do k = iStart, iEnd
-       j = L0_soilId(k)
-       soilId_isPresent(j) = 1
+    nH = 1 !> by default; when iFlag_soilDB = 0
+    if ( iFlag_soilDB .eq. 1 ) nH = nSoilHorizons_mHM
+    do i = 1, nH
+       do k = iStart, iEnd
+          j = L0_soilId(k,i)
+          soilId_isPresent(j) = 1
+       end do
     end do
-
+    
     ! free space
-    deallocate(cellCoor, Id, areaCell, areaCell_2D, mask, slope_val, slope_emp, slope_sorted_index)
+    deallocate(cellCoor, Id, areaCell, areaCell_2D, mask, slope_val, slope_emp, slope_sorted_index, temp)
 
   end subroutine L0_variable_init
 

@@ -103,7 +103,7 @@ CONTAINS
   !                  Matthias Cuntz, Jul  2015 - removed adjustl from trim(adjustl()) of Geoparams for compilation with PGI
   !                  Stephan Thober, Aug  2015 - added read_config_routing and read_routing_params from mRM
   !                  Oldrich Rakovec,Oct  2015 - added reading of the basin average TWS data
-
+  !                     Rohini Kumar, Mar 2016 - options to handle different soil databases
 
   subroutine read_config()
 
@@ -112,6 +112,7 @@ CONTAINS
     use mo_message,          only: message
     use mo_string_utils,     only: num2str
     use mo_nml,              only: open_nml, close_nml, position_nml
+    use mo_constants,        only: eps_dp                     ! epsilon(1.0) in double precision 
     use mo_mhm_constants,    only:                          &
          nodata_i4, nodata_dp,                              & ! nodata values
          nColPars,                                          & ! number of properties of the global variables
@@ -134,11 +135,11 @@ CONTAINS
          dirMorpho, dirLCover,                              & ! input directory of morphological
          dirPrecipitation, dirTemperature,                  & ! directory of meteo input
          dirReferenceET,                                    & ! PET input path  if process 5 is 'PET is input' (case 0)
-         dirMinTemperature, dirMaxTemperature,              & ! PET input paths if process 5 is HarSam (case 1)
-         dirNetRadiation,                                   & ! PET input paths if process 5 is PrieTay (case 2)
-         dirabsVapPressure, dirwindspeed,                   & ! PET input paths if process 5 is PenMon (case 3)
+         dirMinTemperature, dirMaxTemperature,              & ! PET input paths if process 5 is Hargreaves-Samani (case 1)
+         dirNetRadiation,                                   & ! PET input paths if process 5 is Priestely-Taylor (case 2)
+         dirabsVapPressure, dirwindspeed,                   & ! PET input paths if process 5 is Penman-Monteith (case 3)
          inputFormat_meteo_forcings,                        & ! input format either bin or nc
-         fileLatLon,                                         & ! directory of latitude and longitude files
+         fileLatLon,                                        & ! directory of latitude and longitude files
          dirConfigOut,                                      & ! configuration run output directory
          dirCommonFiles,                                    & ! directory where common files are located
          dirOut,                                            & ! output directory basin wise
@@ -149,7 +150,8 @@ CONTAINS
          nSoilHorizons_sm_input,                            & ! No. of mhm soil horizons equivalent to soil moisture input
          basin_avg_TWS_obs,                                 & ! basin avg TWS data
          fileTWS,                                           & ! directory with basin average tws data
-         dirNeutrons, timeStep_neutrons_input,           & ! directory where neutron data is located
+         dirNeutrons, timeStep_neutrons_input,              & ! directory where neutron data is located
+         iFlag_soilDB,                                      & ! options to handle different types of soil databases
          HorizonDepth_mHM, nSoilHorizons_mHM, tillageDepth, & ! soil horizons info for mHM
          fracSealed_cityArea, nLcoverScene,                 & ! land cover information
          LCfilename, LCyearId,                              & !
@@ -329,7 +331,7 @@ CONTAINS
     ! namelist for time settings
     namelist /time_periods/ warming_Days, eval_Per, time_step_model_inputs
     ! namelist soil layering
-    namelist /soilLayer/ tillageDepth, nSoilHorizons_mHM, soil_Depth
+    namelist /soilLayer/ iFlag_soilDB, tillageDepth, nSoilHorizons_mHM, soil_Depth
     ! namelist for land cover scenes
     namelist/LCover/fracSealed_cityArea,nLcover_scene,LCoverYearStart,LCoverYearEnd,LCoverfName
     ! namelist for LAI related data
@@ -353,8 +355,11 @@ CONTAINS
          rootFractionCoefficient_pervious, infiltrationShapeFactor
     namelist /directRunoff1/ imperviousStorageCapacity
     namelist /PET0/  minCorrectionFactorPET, maxCorrectionFactorPET, aspectTresholdPET
+    ! Hargreaves-Samani
     namelist /PET1/  minCorrectionFactorPET, maxCorrectionFactorPET, aspectTresholdPET, HargreavesSamaniCoeff
+    ! Priestely-Taylor
     namelist /PET2/  PriestleyTaylorCoeff, PriestleyTaylorLAIcorr
+    ! Penman-Monteith
     namelist /PET3/  canopyheigth_forest, canopyheigth_impervious, canopyheigth_pervious, displacementheight_coeff, &
          roughnesslength_momentum_coeff, roughnesslength_heat_coeff, stomatal_resistance
     namelist /interflow1/ interflowStorageCapacityFactor, interflowRecession_slope, fastInterflowRecession_forest, &
@@ -386,25 +391,26 @@ CONTAINS
     end if
     ! allocate patharray sizes
     allocate(resolutionHydrology(nBasins))
-    allocate(resolutionRouting  (nBasins))
-    allocate(L0_Basin           (nBasins))
-    allocate(dirMorpho          (nBasins))
-    allocate(dirLCover          (nBasins))
-    allocate(dirPrecipitation   (nBasins))
-    allocate(dirTemperature     (nBasins))
-    allocate(dirwindspeed       (nBasins))
-    allocate(dirabsVapPressure  (nBasins))
-    allocate(dirReferenceET     (nBasins))
-    allocate(dirMinTemperature  (nBasins))
-    allocate(dirMaxTemperature  (nBasins))
-    allocate(dirNetRadiation    (nBasins))
-    allocate(dirOut             (nBasins))
-    allocate(dirRestartOut      (nBasins))
-    allocate(dirRestartIn       (nBasins))
-    allocate(fileLatLon          (nBasins))
-    allocate(dirgridded_LAI     (nBasins))
-    allocate(dirSoil_Moisture   (nBasins))
-    allocate(fileTWS            (nBasins))
+    allocate(resolutionRouting(nBasins))
+    allocate(L0_Basin(nBasins))
+    allocate(dirMorpho(nBasins))
+    allocate(dirLCover(nBasins))
+    allocate(dirPrecipitation(nBasins))
+    allocate(dirTemperature(nBasins))
+    allocate(dirwindspeed(nBasins))
+    allocate(dirabsVapPressure(nBasins))
+    allocate(dirReferenceET(nBasins))
+    allocate(dirMinTemperature(nBasins))
+    allocate(dirMaxTemperature(nBasins))
+    allocate(dirNetRadiation(nBasins))
+    allocate(dirOut(nBasins))
+    allocate(dirRestartOut(nBasins))
+    allocate(dirRestartIn(nBasins))
+    allocate(fileLatLon(nBasins))
+    allocate(dirgridded_LAI(nBasins))
+    allocate(dirSoil_Moisture(nBasins))
+    allocate(dirNeutrons(nBasins))
+    allocate(fileTWS(nBasins))
     !
     resolutionHydrology = resolution_Hydrology(1:nBasins)
     resolutionRouting   = resolution_Routing(1:nBasins)
@@ -425,9 +431,8 @@ CONTAINS
     ! check for perform_mpr and read restart
     if ( ( read_restart ) .and. ( perform_mpr ) ) then
        call message()
-       call message('***WARNING: perform_mpr is internally set to .FALSE.')
        call message('***WARNING: MPR has not effect when reading states from restart file')
-       perform_mpr = .false.
+       call message('            MPR should only be activated if a land cover change accurs.')
     end if
     if ( ( .not. read_restart ) .and. ( .not. perform_mpr ) ) then
        call message()
@@ -506,22 +511,22 @@ CONTAINS
     call position_nml('directories_mHM', unamelist)
     read(unamelist, nml=directories_mHM)
 
-    dirMorpho                 = dir_Morpho         (1:nBasins)
-    dirLCover                 = dir_LCover         (1:nBasins)
-    dirPrecipitation          = dir_Precipitation  (1:nBasins)
-    dirTemperature            = dir_Temperature    (1:nBasins)
-    dirReferenceET            = dir_ReferenceET    (1:nBasins)
-    dirMinTemperature         = dir_MinTemperature (1:nBasins)
-    dirMaxTemperature         = dir_MaxTemperature (1:nBasins)
-    dirNetRadiation           = dir_NetRadiation   (1:nBasins)
-    dirwindspeed              = dir_windspeed      (1:nBasins)
-    dirabsVapPressure         = dir_absVapPressure (1:nBasins)
-    dirOut                    = dir_Out            (1:nBasins)
-    dirRestartOut             = dir_RestartOut     (1:nBasins)
-    dirRestartIn              = dir_RestartIn      (1:nBasins)
-    fileLatLon                 = file_LatLon         (1:nBasins)
-
-    dirgridded_LAI  = dir_gridded_LAI(1:nBasins)
+    dirMorpho         = dir_Morpho(1:nBasins)
+    dirLCover         = dir_LCover(1:nBasins)
+    dirPrecipitation  = dir_Precipitation(1:nBasins)
+    dirTemperature    = dir_Temperature(1:nBasins)
+    dirReferenceET    = dir_ReferenceET(1:nBasins)
+    dirMinTemperature = dir_MinTemperature(1:nBasins)
+    dirMaxTemperature = dir_MaxTemperature(1:nBasins)
+    dirNetRadiation   = dir_NetRadiation(1:nBasins)
+    dirwindspeed      = dir_windspeed(1:nBasins)
+    dirabsVapPressure = dir_absVapPressure(1:nBasins)
+    dirOut            = dir_Out(1:nBasins)
+    dirRestartOut     = dir_RestartOut(1:nBasins)
+    dirRestartIn      = dir_RestartIn(1:nBasins)
+    fileLatLon        = file_LatLon(1:nBasins)
+    dirgridded_LAI    = dir_gridded_LAI(1:nBasins)
+    
     ! counter checks -- soil horizons
     if (nSoilHorizons_mHM .GT. maxNoSoilHorizons) then
        call message()
@@ -535,16 +540,36 @@ CONTAINS
     call position_nml('soillayer', unamelist)
     read(unamelist, nml=soillayer)
 
-    allocate(HorizonDepth_mHM(nSoilHorizons_mHM))
-    HorizonDepth_mHM = 0.0_dp
-    HorizonDepth_mHM(1:nSoilHorizons_mHM-1) = soil_Depth(1:nSoilHorizons_mHM-1)
+    allocate( HorizonDepth_mHM(nSoilHorizons_mHM) )
+    HorizonDepth_mHM(:) = 0.0_dp
+   
+    if( iFlag_soilDB .eq. 0 ) then
+       ! classical mhm soil database
+       HorizonDepth_mHM(1:nSoilHorizons_mHM-1) = soil_Depth(1:nSoilHorizons_mHM-1)
+    else if( iFlag_soilDB .eq. 1 ) then
+       ! for option-1 where horizon specific information are taken into consideration
+       HorizonDepth_mHM(1:nSoilHorizons_mHM) = soil_Depth(1:nSoilHorizons_mHM)
+    else
+       call message()
+       call message('***ERROR: iFlag_soilDB option given does not exist. Only 0 and 1 is taken at the moment.')
+       stop
+    end if
 
+    ! some consistency checks for the specification of the tillage depth
+    if(iFlag_soilDB .eq. 1) then
+       if( count( abs(HorizonDepth_mHM(:) - tillageDepth) .lt. eps_dp )  .eq. 0 ) then
+          call message()
+          call message('***ERROR: Soil tillage depth must conform with one of the specified horizon (lower) depth.')
+          stop
+       end if
+    end if
+   
     !===============================================================
     !  Read namelist of optional input data
     !===============================================================
     call position_nml('optional_data', unamelist)
     read(unamelist, nml=optional_data)
-    dirSoil_moisture = dir_Soil_moisture (1:nBasins)
+    dirSoil_moisture = dir_Soil_moisture(1:nBasins)
     if ( nSoilHorizons_sm_input .GT. nSoilHorizons_mHM ) then
        call message()
        call message('***ERROR: Number of soil horizons representative for input soil moisture exceeded')
@@ -557,28 +582,25 @@ CONTAINS
     !===============================================================
     ! Read evaluation basin average TWS data
     !===============================================================
-
     fileTWS = file_TWS (1:nBasins)
 
     ! if (opti_function .EQ. 15) then !OROROR
-       allocate(basin_avg_TWS_obs%basinId(nBasins)); basin_avg_TWS_obs%basinId = nodata_i4
-       allocate(basin_avg_TWS_obs%fName  (nBasins)); basin_avg_TWS_obs%fName(:)= num2str(nodata_i4)
-
-       do iBasin = 1, nBasins
-           if (trim(fileTWS(iBasin)) .EQ. trim(num2str(nodata_i4))) then
-                call message()
-                call message('***ERROR: mhm.nml: Filename of evaluation TWS data ', &
-                                 ' for subbasin ', trim(adjustl(num2str(iBasin))), &
-                                 ' is not defined!')
-                call message('          Error occured in namelist: evaluation_tws')
-                stop
-           end if
-
-           basin_avg_TWS_obs%basinId(iBasin) = iBasin
-           basin_avg_TWS_obs%fname(iBasin)   = trim(file_TWS(iBasin))
-       end do
-   ! end if !OROROR
-
+    allocate(basin_avg_TWS_obs%basinId(nBasins)); basin_avg_TWS_obs%basinId = nodata_i4
+    allocate(basin_avg_TWS_obs%fName  (nBasins)); basin_avg_TWS_obs%fName(:)= num2str(nodata_i4)
+    
+    do iBasin = 1, nBasins
+       if (trim(fileTWS(iBasin)) .EQ. trim(num2str(nodata_i4))) then
+          call message()
+          call message('***ERROR: mhm.nml: Filename of evaluation TWS data ', &
+               ' for subbasin ', trim(adjustl(num2str(iBasin))), &
+               ' is not defined!')
+          call message('          Error occured in namelist: evaluation_tws')
+          stop
+       end if
+       
+       basin_avg_TWS_obs%basinId(iBasin) = iBasin
+       basin_avg_TWS_obs%fname(iBasin)   = trim(file_TWS(iBasin))
+    end do
 
     !===============================================================
     ! Read process selection list
@@ -895,8 +917,7 @@ CONTAINS
 
     ! Process 5 - potential evapotranspiration (PET)
     select case (processCase(5))
-       ! 0 - PET is input, correct PET by aspect
-    case(0)
+    case(0) ! 0 - PET is input, correct PET by aspect
        call position_nml('PET0', unamelist_param)
        read(unamelist_param, nml=PET0)
        processMatrix(5, 1) = processCase(5)
@@ -918,8 +939,7 @@ CONTAINS
           stop
        end if
 
-       ! 1 - Hargreaves-Samani method (HarSam) - additional input needed: Tmin, Tmax
-    case(1)
+    case(1) ! 1 - Hargreaves-Samani method (HarSam) - additional input needed: Tmin, Tmax
        call position_nml('PET1', unamelist_param)
        read(unamelist_param, nml=PET1)
        processMatrix(5, 1) = processCase(5)
@@ -942,8 +962,7 @@ CONTAINS
           stop
        end if
 
-       ! 2 - Priestley-Taylor method (PrieTay) - additional input needed: net_rad
-    case(2)
+    case(2) ! 2 - Priestley-Taylor method (PrieTay) - additional input needed: net_rad
        ! check which LAI input is specified
        if (timeStep_LAI_input .NE. 0) then
           call message('***ERROR: The specified option of process 5 does only work with LAI from LUT.')
@@ -969,8 +988,7 @@ CONTAINS
           stop
        end if
 
-       ! 3 - Penman-Monteith method (PenMon) - additional input needed: net_rad, abs. vapour pressue, windspeed
-    case(3)
+    case(3) ! 3 - Penman-Monteith method - additional input needed: net_rad, abs. vapour pressue, windspeed
        ! check which LAI input is specified
        if (timeStep_LAI_input .NE. 0) then
           call message('***ERROR: The specified option of process 5 does only work with LAI from LUT.')

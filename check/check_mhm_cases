@@ -16,15 +16,25 @@ set -e
 #     $ ./check_mhm_cases -h
 # for options.
 #
+# Examples
+#     PGI compiler on Eve in debug mode without OpenMP
+#     $ ./check_mhm_cases -c pgi -j 4 -s eve -t '0' -r debug
+#
+#     Only check cases 2 and 3 for GNU compiler on Eve in debug and release mode with and without OpenMP
+#     $ ./check_mhm_cases -c gnu -j 4 -s eve case_02 case_03
+#
+#     All check cases with all compiler for release mode on Eve
+#     $ ./check_mhm_cases -j 4 -s eve -r release
+#
 # -------------------------------------------------------------------------------------------
 # DETAILS
 # -------------------------------------------------------------------------------------------
 #
-# To run all the test cases on (s)ystem "eve2" with (c)ompiler "nag53" in (r)elease mode "debug"
+# To run all the test cases on (s)ystem "eve" with (c)ompiler "nag53" in (r)elease mode "debug"
 # type
 
 #      $ cd check/
-#      $ ./check_mhm_cases -s eve2 -c nag53 -r debug
+#      $ ./check_mhm_cases -s eve -c nag53 -r debug
 
 # on your command line. If test case was running properly, i.e. is
 # consistent with the pre-defined output, command line output will be
@@ -33,7 +43,7 @@ set -e
 #      $     #     case_[id]  o.k.     #
 #      $     ###########################
 #      $     using
-#      $        System:   eve2
+#      $        System:   eve
 #      $        Compiler: nag53
 #      $        Release:  debug
 
@@ -44,7 +54,7 @@ set -e
 #      $     #     case_[id]  failed   #
 #      $     ###########################
 #      $     using
-#      $        System:   eve2
+#      $        System:   eve
 #      $        Compiler: nag53
 #      $        Release:  debug
 
@@ -87,6 +97,7 @@ set -e
 #          Jul 2014 Juliane Mai                    - checking daily_discharge files added
 #          Mar 2015 Matthias Zink                  - added soil moisture calibration test
 #          Oct 2015 Matthias Cuntz                 - added multi-job make
+#          Jan 2016 Matthias Cuntz                 - run only specific test cases
 
 # -------------------------------------------------------------------------------------------
 #
@@ -125,25 +136,26 @@ function usage () {
     printf "The settings (s)ystem, (c)ompiler and (r)elease, which are used by the Makefile, can be specified optionally.\n"
     printf "\n"
     printf "Input\n"
-    printf "    clean | cleanup | cleanclean    Runs only the cleanup function.\n"
+    printf "    #number | clean | cleanup | cleanclean    Runs a specific check case or only the cleanup function.\n"
     printf "\n"
     printf "Options\n"
     printf "    -h     Prints this help screen.\n"
     printf "    -c     Compilers used to generate a mHM executable, e.g. 'gnu'\n"
     printf "           'all' loops over all compilers found on the system\n"
     printf "           (Default: all)\n"
-    printf "    -j     Specifies the number of jobs (commands) to run simultaneously, for make only."
+    printf "    -j     Specifies the number of jobs (commands) to run simultaneously, for make only.\n"
     printf "    -r     Release or debug mode, e.g. 'release'\n"
     printf "           'all' or 'both' loop over debug and release\n"
     printf "           (Default: all)\n"
-    printf "    -s     System on which mHM will be compiled, e.g. 'eve2'\n"
-    printf "           (Default: eve2).\n"
+    printf "    -s     System on which mHM will be compiled, e.g. 'eve'\n"
+    printf "           (Default: eve).\n"
     printf "    -t     Number of threads for OpenMP, e.g. '6'\n"
     printf "           Set to '0' for deactivation of parallel test\n"
     printf "           (Default: '0 2').\n"
+    printf "    -v     Verbose. Show make, run and diff outputs.\n"
     printf "\n"
     printf "Example\n"
-    printf "    ${pprog} -j 12 -c gnu45 -s eve2 -r debug -t '0 2'\n"
+    printf "    ${pprog} -j 12 -c gnu45 -s eve -r debug -t '0 2'\n"
 }
 
 # cleanup at end and when interupted
@@ -167,8 +179,8 @@ function cleanup ()
 
     # make cleanclean
     cd ..
-    if [[ "z${compiler}" == "z" ]] ; then compiler=$(echo ${compilers} | cut -f 1 -d ' ') ; fi
-    make system=${system} compiler=${compiler} PROGNAME=${mhm_exe} cleanclean > /dev/null
+    if [[ "${compiler}z" == "z" ]] ; then compiler=$(echo ${compilers} | cut -f 1 -d ' ') ; fi
+    eval make -f ${makefile} system=${system} compiler=${compiler} PROGNAME=${mhm_exe} cleanclean ${devnull}
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -177,14 +189,17 @@ function cleanup ()
 
 # name of the mhm executable
 mhm_exe='mhm_for_check'
+makefile=Makefile
+makeconfig=make.config
 
 # switches
 compilers='all'
 ijobs=0
 release='all'
-system='eve2'
+system='eve'
 threads='0 2'
-while getopts "c:hj:r:s:t:" Option ; do
+verbose=0
+while getopts "c:hj:r:s:t:v" Option ; do
     case ${Option} in
         c) compilers="${OPTARG}";;
         h) usage 1>&2; exit 0;;
@@ -192,40 +207,55 @@ while getopts "c:hj:r:s:t:" Option ; do
         r) release="${OPTARG}";;
         s) system="${OPTARG}";;
         t) threads="${OPTARG}";;
+        v) verbose=1;;
         *) printf "Error ${pprog}: unimplemented option.\n\n";  usage 1>&2; exit 1;;
     esac
 done
 shift $((${OPTIND} - 1))
 
+# verbose
+if [[ ${verbose} -eq 1 ]] ; then devnull="" ; else devnull="> /dev/null" ; fi
+
 # check for compilers on system
 compilers=$(echo ${compilers} | tr [A-Z] [a-z])
 if [[ "${compilers}" == "all" ]] ; then
-    compilers=$(\ls ../make.config/${system}.* | grep -Ev '(alias|gnu41|gnu44|sun12|pgfortran154)' | cut -d '.' -f 5)
+    mcol=$(echo ${makeconfig} | tr '.' ' ' | wc -w)
+    icol=$(( 3 + ${mcol} ))
+    compilers=$(\ls ../${makeconfig}/${system}.* | grep -Ev '(alias|gnu41|gnu44|sun12|pgfortran154|pgi159)' | cut -d '.' -f ${icol})
 fi
 
 # argument
+case_dirs=""
 if [ $# -gt 0 ] ; then
-    # currently the only argument possible is "clean"
-    case ${1} in
-        clean*) cleanup; exit 0;;
-        *) printf "Error ${pprog}: unknown argument.\n\n";  usage 1>&2; exit 1;;
-    esac
+    # case directory or "clean"
+    for ii in $@ ; do
+        case ${ii} in
+    	    case_[0-9][0-9]) case_dirs="${case_dirs} ${ii}";;
+            clean*)          cleanup; exit 0;;
+            *)               printf "Error ${pprog}: unknown argument.\n\n";  usage 1>&2; exit 1;;
+        esac
+    done
 fi
 
 # check for cdo
 set +e
-icdo=$(which cdo)
+icdo=$(which cdo 2> /dev/null)
+set -e
 if [[ "${icdo}z" == "z" ]] ; then
-    if [[ ${system} == "eve" ]] || [[ ${system} == "eve2" ]] ; then
+    if [[ ${system} == "eve" || ${system} == "eve2" ]] ; then
         echo '   try to load module cdo ...'
         source /etc/profile.d/000-modules.sh
-        if [[ $(hostname) == 'frontend1' || $(hostname) == 'frontend2' ]] ; then
+        if [[ $(hostname | cut -d . -f 1) == 'frontend1' || $(hostname | cut -d . -f 1) == 'frontend2' ]] ; then
             module load cdo
+	else
+	    echo "Host not specified!"
         fi
-        icdo=$(which cdo)
+	set +e
+        icdo=$(which cdo 2> /dev/null)
+	set -e
     fi
 fi
-set -e
+#set -ex
 if [[ "${icdo}z" == "z" ]] ; then printf "Error ${pprog}: cdo not found.\n\n" ; exit 1 ; fi
 
 # rm coloured ls
@@ -258,20 +288,19 @@ for irelease in ${release} ; do
 	    
             if [[ ${thread} -eq 0 ]] ; then
                 echo '         OpenMP:   False'
-                make ${mjobs} system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp= cleanclean > /dev/null
-                make ${mjobs} system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp= > /dev/null
+                eval make -f ${makefile} ${mjobs} system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp= cleanclean ${devnull}
+                eval make -f ${makefile} ${mjobs} system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp= ${devnull}
             else
                 echo '         OpenMP:   True'
                 echo '         Threads:  '${thread}
-                make ${mjobs} system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp=true cleanclean > /dev/null
-                make ${mjobs} system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp=true > /dev/null
+                eval make -f ${makefile} ${mjobs} system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp=true cleanclean ${devnull}
+                eval make -f ${makefile} ${mjobs} system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp=true ${devnull}
                 export OMP_NUM_THREADS=${thread}
             fi
 
             # run checks
             cd check
-            case_dirs=$(\ls -d case_*)
-            #case_dirs=$(\ls -d case_02)
+	    if [[ "${case_dirs}z" == "z" ]] ; then case_dirs=$(\ls -d case_*) ; fi
 
             nRecordsDiffer_allCases=0
             for case_dir in ${case_dirs} ; do
@@ -283,16 +312,20 @@ for irelease in ${release} ; do
                 cd ${case_dir}
 
                 # remove old exe and link recently compiled
-                if [ -f ${mhm_exe} ] ; then rm ${mhm_exe} ; fi
+                if [[ -f ${mhm_exe} ]] ; then rm ${mhm_exe} ; fi
                 ln -s ../../${mhm_exe} . 
 
                 # remove old files
-                if [ -f mhm_terminal.${pid}.out ] ; then rm mhm_terminal.${pid}.out ; fi
-                if [ -f cdo.${pid}.terminal ] ; then rm cdo.${pid}.terminal ; fi
+                if [[ -f mhm_terminal.${pid}.out ]] ; then rm mhm_terminal.${pid}.out ; fi
+                if [[ -f cdo.${pid}.terminal ]] ; then rm cdo.${pid}.terminal ; fi
 
                 # run mhm
-                echo '   mhm is running ...    ./'${mhm_exe}' > mhm_terminal.'${pid}'.out' 
-                ./${mhm_exe} > mhm_terminal.${pid}.out
+                echo '   mhm is running ...    ./'${mhm_exe}' > mhm_terminal.'${pid}'.out'
+		if [[ ${verbose} -eq 1 ]] ; then
+                    ./${mhm_exe} | tee mhm_terminal.${pid}.out
+		else
+                    ./${mhm_exe} > mhm_terminal.${pid}.out
+		fi
 
                 # mhm was running till the end?
                 set +e
@@ -323,7 +356,11 @@ for irelease in ${release} ; do
                     for nc_file in ${nc_files} ; do
                         # cdo -b 16 :: precision=double=16bit
                         echo '   *  cdo diff output_save/'${nc_file}' output_b1/'${nc_file}
-                        ${icdo} -s diffn output_save/${nc_file} output_b1/${nc_file} > cdo.${pid}.terminal
+			if [[ ${verbose} -eq 1 ]] ; then
+                            ${icdo} -s diffn output_save/${nc_file} output_b1/${nc_file} | tee cdo.${pid}.terminal
+			else
+			    ${icdo} -s diffn output_save/${nc_file} output_b1/${nc_file} > cdo.${pid}.terminal
+			fi
                         iRecordsDiffer=$(grep -i 'differ' cdo.${pid}.terminal | tail -1 | cut -f 1 -d 'o')
                         nRecordsDiffer=$((nRecordsDiffer+iRecordsDiffer))
                         nRecordsDiffer_allCases=$((nRecordsDiffer_allCases+iRecordsDiffer))
@@ -342,7 +379,11 @@ for irelease in ${release} ; do
                     for discharge_file in ${discharge_files} ; do
                         echo '   *  diff output_save/'${discharge_file}' output_b1/'${discharge_file}
                         set +e
-                        diff output_save/${discharge_file} output_b1/${discharge_file} > diff1.${pid}.terminal
+			if [[ ${verbose} -eq 1 ]] ; then
+                            diff output_save/${discharge_file} output_b1/${discharge_file} | tee diff1.${pid}.terminal
+			else
+                            diff output_save/${discharge_file} output_b1/${discharge_file} > diff1.${pid}.terminal
+			fi
                         set -e
                         iRecordsDiffer=$(echo $(wc -l diff1.${pid}.terminal) | cut -d ' ' -f 1)
                         if [[ ${iRecordsDiffer} -gt 0 ]] ; then
@@ -368,7 +409,11 @@ for irelease in ${release} ; do
                     for finalpara_file in ${finalpara_files} ; do
                         echo '   *  diff output_save/'${finalpara_file}' output_b1/'${finalpara_file}
                         set +e
-                        diff output_save/${finalpara_file} output_b1/${finalpara_file} > diff2.${pid}.terminal
+			if [[ ${verbose} -eq 1 ]] ; then
+                            diff output_save/${finalpara_file} output_b1/${finalpara_file} | tee diff2.${pid}.terminal
+			else
+                            diff output_save/${finalpara_file} output_b1/${finalpara_file} > diff2.${pid}.terminal
+			fi
                         set -e
                         iRecordsDiffer=$(echo $(wc -l diff2.${pid}.terminal) | cut -d ' ' -f 1)
                         if [[ ${iRecordsDiffer} -gt 0 ]] ; then

@@ -23,6 +23,7 @@
 ! Matthias Zink, Dec 2014  - adopted inflow gauges to ignore headwater cells
 ! Matthias Zink, Mar 2015  - added optional soil mositure read in for calibration
 
+  
 !******************************************************************************************
 !
 !******************************************************************************************
@@ -87,24 +88,39 @@ optimize_restart = .FALSE.
 !> (3) SCE                 (requires single-objective (SO) function) \n
 !> additional settings for the different methods can be provided below in namelist Optimization
 opti_method = 1
-!> (1)  SO: Q:   1.0 - NSE  \n
-!> (2)  SO: Q:   1.0 - lnNSE  \n
-!> (3)  SO: Q:   1.0 - 0.5*(NSE+lnNSE)  \n
-!> (4)  SO: Q:  -1.0 * loglikelihood with trend removed from absolute errors and then lag(1)-autocorrelation removed  \n
-!> (5)  SO: Q:   ((1-NSE)**6+(1-lnNSE)**6)**(1/6)  \n
-!> (6)  SO: Q:   SSE  \n
-!> (7)  SO: Q:  -1.0 * loglikelihood with trend removed from absolute errors  \n
-!> (8)  SO: Q:  -1.0 * loglikelihood with trend removed from the relative errors and then lag(1)-autocorrelation removed \n
-!> (9)  SO: Q:  1.0 - KGE (Kling-Gupta efficiency measure)  \n
-!> (10) SO: SM: 1.0 - KGE of catchment average soilmoisture \n
-!> (11) SO: SM: 1.0 - Pattern dissimilarity (PD) of spatially distributed soil moisture \n
-!> (12) SO: SM: Sum of squared errors (SSE) of spatially distributed standard score (normalization) of soil moisture \n
-!> (13) SO: SM: 1.0 - average temporal correlation of spatially distributed soil moisture \n
-!> (14) SO: Q:  sum[((1.0-KGE_i)/ nGauges)**6]**(1/6) > combination of KGE of every gauging station based on a power-6 norm \n
-!> (15) SO: Q + basin_avg_TWS: [1.0-KGE(Q)]*RMSE(basin_avg_TWS) - objective function using Q and basin average (standard score) TWS\n
-!> (16) (reserved) please use the next number when implementing a new one
-!> (17) SO: N:  1.0 - KGE of spatio-temporal neutron data, catchment-average
-!> further functions can be implemented in mo_objective_function
+!> (1)  SO: Q:   1.0 - NSE                                                                                                          \n
+!> (2)  SO: Q:   1.0 - lnNSE                                                                                                        \n
+!> (3)  SO: Q:   1.0 - 0.5*(NSE+lnNSE)                                                                                              \n
+!> (4)  SO: Q:  -1.0 * loglikelihood with trend removed from absolute errors and then lag(1)-autocorrelation removed                \n
+!> (5)  SO: Q:   ((1-NSE)**6+(1-lnNSE)**6)**(1/6)                                                                                   \n
+!> (6)  SO: Q:   SSE                                                                                                                \n
+!> (7)  SO: Q:  -1.0 * loglikelihood with trend removed from absolute errors                                                        \n
+!> (8)  SO: Q:  -1.0 * loglikelihood with trend removed from the relative errors and then lag(1)-autocorrelation removed            \n
+!> (9)  SO: Q:  1.0 - KGE (Kling-Gupta efficiency measure)                                                                          \n
+!> (10) SO: SM: 1.0 - KGE of catchment average soilmoisture                                                                         \n
+!> (11) SO: SM: 1.0 - Pattern dissimilarity (PD) of spatially distributed soil moisture                                             \n
+!> (12) SO: SM: Sum of squared errors (SSE) of spatially distributed standard score (normalization) of soil moisture                \n
+!> (13) SO: SM: 1.0 - average temporal correlation of spatially distributed soil moisture                                           \n
+!> (14) SO: Q:  sum[((1.0-KGE_i)/ nGauges)**6]**(1/6) > combination of KGE of every gauging station based on a power-6 norm         \n
+!> (15) SO: Q + basin_avg_TWS: [1.0-KGE(Q)]*RMSE(basin_avg_TWS) - objective function using Q and basin average (standard score) TWS \n
+!> (16) (reserved) please use the next number when implementing a new one                                                           \n
+!>      MO: Q:  1st objective: (1) = 1.0 - NSE                                                                                      \n
+!>          Q:  2nd objective: (2) = 1.0 - lnNSE                                                                                    \n
+!> (17) SO: N:  1.0 - KGE of spatio-temporal neutron data, catchment-average                                                        \n
+!> (18) (reserved) please use the next number when implementing a new one                                                           \n
+!>      MO: Q:  1st objective: 1.0 - lnNSE(Q_highflow)  (95% percentile)                                                            \n
+!>          Q:  2nd objective: 1.0 - lnNSE(Q_lowflow)   (5% of data range)                                                          \n
+!> (19) (reserved) please use the next number when implementing a new one                                                           \n
+!>      MO: Q:  1st objective: 1.0 - lnNSE(Q_highflow)  (non-low flow)                                                              \n
+!>          Q:  2nd objective: 1.0 - lnNSE(Q_lowflow)   (5% of data range)                                                          \n
+!> (20) (reserved) please use the next number when implementing a new one                                                           \n
+!>      MO: Q:  1st objective: absolute difference in FDC's low-segment volume                                                      \n
+!>          Q:  2nd objective: 1.0 - NSE of discharge of months DJF                                                                 \n
+!> (21) (reserved) please use the next number when implementing a new one                                                           \n
+!>      SO: Q:  ( (1.0-lnNSE(Q_highflow))**6 + (1.0-lnNSE(Q_lowflow))**6 )**(1/6)                                                   \n
+!>              where Q_highflow and Q_lowflow are calculated like in objective (19)                                                \n
+!> (22-26) (reserved MC/JM/ST) please use the next number when implementing a new one                                               \n
+!> further functions can be implemented in mo_objective_function and mo_mrm_objective_function
 opti_function = 3
 !-----------------------------------------------------------------------------
 !> flags for reading and writing restart output, and calculating mpr
@@ -144,7 +160,7 @@ mrm_coupling_mode = 2
 !> directory where discharge files are located
 dir_Gauges(1)        = "test_basin/input/gauge/"
 dir_Gauges(2)        = "test_basin_2/input/gauge/"
-!> directory where simulated runoff can be found (only required if coupling mode equals 1)
+!> directory where simulated runoff can be found (only required if coupling mode equals 0)
 dir_Total_Runoff(1) = 'test_basin/output_b1/'
 dir_Total_Runoff(2) = 'test_basin_2/output/'
 /
@@ -328,18 +344,79 @@ time_step_model_inputs(2) = 0
 /
 
 !******************************************************************************************
-! mHM SOIL LAYERING
+! INPUT SOIL DATABASE AND mHM LAYERING 
 !******************************************************************************************
-!> Namelist controlling the layering of the soil
+!> Namelist controlling the layer information of the soil database
 !> Variables given in this namelist are common to all basins to be modeled.
 &soilLayer
+!----------------------------------------------------------------------------------------------------------
+!> iFlag_soilDB:
+!>            flag to handle multiple types of soil databases and their processing within the mHM.\n
+!>            This flag is unique and valid for all basins.\n
+!>            Depending on the choice of this flag you need to process your soil database differently.\n
+!
+!> iFlag_soilDB = 0:
+!>            Read and process the soil database in a classical mHM format which requires:\n
+!>               i) a single gridded ASCII file of soil-id (soil_class.asc - hard coded file name)\n
+!>              ii) a single soil look-up-table file (soil_classdefinition.txt) with information of 
+!>                  soil textural properties for every horizon.\n
+!
+!>            Here mHM is quite flexible to handle multiple soil layers as specified in "nSoilHorizons_mHM"
+!>            and depths provided in "soil_Depth(:)".\n
+!
+!>            The tillage depth is flexible in this case.\n
+!
+!>            The depth of last mHM modeling layer is determined according the information given in the
+!>            input soil database, which could vary spatially depending on the soil type. Therefore the 
+!>            user should not provide the depth of the last modeling layer. For example if you choose
+!>            nSoilHorizons_mHM = 3, then soil_Depth should be given for only soil_Depth(1) and soil_Depth(2).
+!>            Any additional depth related information would be discarded
+!
+!> iFlag_soilDB = 1:
+!>            Handle the harmonised horizon specific soil information, requires
+!>               i) multiple (horizon specific) gridded ASCII files containing info of soil-ids.
+!>                 (e.g., soil_class_horizon001.asc, soil_class_horizon002.asc, ....)
+!>                 File names are automatically generated within mHM as per the given soil_Depth(:).
+!>                 The format follows the FORTRAN coding style: "soil_class_horizon_"XX".asc"
+!>                 where XX represents the horizon id with 2 spaces allocated for this number
+!>                 and the empty spaces are (trailed) filled with Zeros. FORTRAN CODE I2.2
+!>                 The horizon is numbered sequentially from top to bottom soil layers.
+!>                 E.g., for 1st horizon it is soil_class_horizon_01.asc,
+!>                 for 2nd it is soil_class_horizon_02.asc, ... and so on. \n               
+!
+!>              ii) a single soil look-up-table file with information of soil textural properties for each soil type.
+!>                  Note that there should be no horizon specific information in this LUT file
+!>                  (soil_classdefinition_iFlag_soilDB_1.txt - filename is hard coded).\n
+!
+!>            The modeling soil horizons is as per the input data (i.e. for which the gridded ASCII files are available).
+!
+!>            The depth of the last mHM horizon should be specified. It is fixed and uniform across the entire modeling domain.\n
+!
+!>            The tillage depth should conform with one of the horizon (lower) layer depths.\n     
+!
+!>            There is an overhead cost of reading and storing multiple (horizon specific) gridded ASCII files\n
+!
+!> Note: For both cases: The present model code mHM can handle maximum of 10 soil horizons (hard coded).
+!>        To increase this number, edit the variable "maxNoSoilHorizons" in the "/src/mhm/mo_mhm_constants.f90" file
+!
+!----------------------------------------------------------------------------------------------------------
+iFlag_soilDB = 0
+!
 !> [mm] soil depth down to which organic matter is possible
-tillageDepth      = 200
+tillageDepth = 200
+!
 !> No. of soil horizons to be modeled
-nSoilHorizons_mHM = 2
-!> Soil_Horizon       Depth[mm]             ! depth of soil horizons w.r.t surface
-!> [mm] from 1,..,n-1. Depth of layer n is determined from soil LUT (positive downwards)
-soil_Depth(1)     = 200
+nSoilHorizons_mHM =2
+!
+! soil depth information
+!> IF (iFlag_soilDB = 0)
+!>    Provide below the soil_Depth() for 1,2,..,*n-1* soil horizons. Depth of the last layer(n) is taken from the soil LUT
+!> IF (iFlag_soilDB = 1)
+!>    Provide below the soil_Depth() for every 1,2..n-1,*n* soil horizons. You must have soil_class-id gridded file for each layer
+!>    Also check your tillage layer depth. It should conform with one of the below specified soil_Depth.
+!
+!> Soil_Horizon   Depth[mm]      ! depth of soil horizons w.r.t. ground surface (positive downwards)
+soil_Depth(1) = 200
 /
 
 !******************************************************************************************
@@ -476,17 +553,17 @@ nGaugesTotal = 2
 !> basin 1
 !> number of gauges for subbasin (1)
 NoGauges_basin(1)   = 1
-!> id of gauge(1) for subbasin(1) --> (1,1)
+!> in subbasin(1), this is the id of gauge(1)  --> (1,1)
 Gauge_id(1,1)       = 398
-!> name of file with timeseries of gauge(1) for subbasin(1) --> (1,1)
+!> name of file with timeseries for subbasin(1) at gauge(1) --> (1,1)
 gauge_filename(1,1) = "00398.txt"
 !
 !> basin 2
 !> number of gauges for subbasin (2)
 NoGauges_basin(2)       = 1
-!> id of gauge(1) for subbasin(2) --> (2,1)
+!> in subbasin(2), this is the id of gauge(1) --> (2,1)
 Gauge_id(2,1)           = 45
-!> name of file with timeseries of gauge(1) for subbasin(2) --> (2,1)
+!> name of file with timeseries for subbasin(2) at gauge(1) --> (2,1)
 Gauge_filename(2,1)     = "45.txt"
 /
 
