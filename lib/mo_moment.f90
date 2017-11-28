@@ -37,37 +37,6 @@ MODULE mo_moment
 
   ! Copyright 2011-2012 Matthias Cuntz
 
-
-  ! Note on Numerical Recipes License
-  ! ---------------------------------
-  ! Be aware that some code is under the Numerical Recipes License 3rd
-  ! edition <http://www.nr.com/aboutNR3license.html>
-
-  ! The Numerical Recipes Personal Single-User License lets you personally
-  ! use Numerical Recipes code ("the code") on any number of computers,
-  ! but only one computer at a time. You are not permitted to allow anyone
-  ! else to access or use the code. You may, under this license, transfer
-  ! precompiled, executable applications incorporating the code to other,
-  ! unlicensed, persons, providing that (i) the application is
-  ! noncommercial (i.e., does not involve the selling or licensing of the
-  ! application for a fee), and (ii) the application was first developed,
-  ! compiled, and successfully run by you, and (iii) the code is bound
-  ! into the application in such a manner that it cannot be accessed as
-  ! individual routines and cannot practicably be unbound and used in
-  ! other programs. That is, under this license, your application user
-  ! must not be able to use Numerical Recipes code as part of a program
-  ! library or "mix and match" workbench.
-
-  ! Businesses and organizations that purchase the disk or code download,
-  ! and that thus acquire one or more Numerical Recipes Personal
-  ! Single-User Licenses, may permanently assign those licenses, in the
-  ! number acquired, to individual employees. Such an assignment must be
-  ! made before the code is first used and, once made, it is irrevocable
-  ! and can not be transferred.
-
-  ! If you do not hold a Numerical Recipes License, this code is only for
-  ! informational and educational purposes but cannot be used.
-
   USE mo_kind, ONLY: i4, sp, dp
 
   IMPLICIT NONE
@@ -1317,7 +1286,7 @@ CONTAINS
     p(:) = s(:)*s(:)
     var = sum(p(:), mask=maske)
     var = (var-ep*ep/n)/(n-1.0_dp)
-    if ( abs(var) .lt. tiny(0.0_dp) ) stop 'kurtosis_dp: no kurtosis when zero variance'
+    if (abs(var) .lt. tiny(0.0_dp)) stop 'kurtosis_dp: no kurtosis when zero variance'
     ! Kurtosis
     p(:) = p(:)*s(:)*s(:)
     kurtosis_dp = sum(p(:), mask=maske)
@@ -1358,7 +1327,7 @@ CONTAINS
     p(:) = s(:)*s(:)
     var = sum(p(:), mask=maske)
     var = (var-ep*ep/n)/(n-1.0_sp)
-    if (abs(var) .lt. tiny(0.0_sp) ) stop 'kurtosis_sp: no kurtosis when zero variance'
+    if (abs(var) .lt. tiny(0.0_sp)) stop 'kurtosis_sp: no kurtosis when zero variance'
     ! Kurtosis
     p(:) = p(:)*s(:)*s(:)
     kurtosis_sp = sum(p(:), mask=maske)
@@ -1673,7 +1642,7 @@ CONTAINS
     if (present(stddev))   stddev   = sqrt(var)
     if (.not. (present(skewness) .or. present(kurtosis))) return
     ! Skewness
-    if ( abs(var) .lt. tiny(0.0_dp) ) stop 'moment_dp: no skewness or kurtosis when zero variance'
+    if (abs(var) .lt. tiny(0.0_dp)) stop 'moment_dp: no skewness or kurtosis when zero variance'
     p(:) = p(:)*s(:)
     if (present(skewness)) then
        skewness = sum(p(:), mask=maske)
@@ -1911,7 +1880,7 @@ CONTAINS
     var = (var-ep*ep/n)/(n-1.0_sp)
     stddev = sqrt(var)
     ! Skewness
-    if ( abs(var) .lt. tiny(0.0_sp)) stop 'skewness_sp: no skewness when zero variance'
+    if (abs(var) .lt. tiny(0.0_sp)) stop 'skewness_sp: no skewness when zero variance'
     p(:) = p(:)*s(:)
     skewness_sp = sum(p(:), mask=maske)
     skewness_sp = skewness_sp/(n*stddev*stddev*stddev)

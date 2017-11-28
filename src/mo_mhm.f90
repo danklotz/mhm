@@ -99,7 +99,10 @@ CONTAINS
   !                                                           - initalization of soil moist. at first timestep
   !                  Rohini Kumar,                   Aug 2013 - dynamic LAI option included, and changed within 
   !                                                             the code made accordingly (e.g., canopy intecpt.)
-  !                                                           - max. canopy interception is estimated outside of MPR call
+  !                                                           - max. canopy interception is estimated outside of MPR
+  !                                                             call
+  !                 Matthias Zink,                   Mar 2014 - added inflow from upstream areas
+  !                 Rohini Kumar,                    Apr 2014 - mHM run with a single L0 grid cell, also in the routing mode
   ! ------------------------------------------------------------------
 
   subroutine mHM(  &
@@ -121,6 +124,9 @@ CONTAINS
       ntimesteps_day      , & ! number of time intervals per day, transformed in dp
       TS                  , & ! time step in [h]
       mask0               , & ! mask 0 for MPR
+      nInflowGauges       , & ! number of inflow gauges
+      InflowIndexList     , & ! list of indices for inflow gauges
+      InflowNodeList      , & ! list of L11 ID for inflow gauges
       global_parameters   , & ! global mHM parameters
       ! LUT
       LCyearId            , & ! mapping of landcover scenes
@@ -169,6 +175,8 @@ CONTAINS
       pet_in              , & ! Daily potential evapotranspiration
       prec_in             , & ! Daily mean precipitation
       temp_in             , & ! Daily average temperature
+      ! discharge inflow
+      QInflow             , & ! discharge time series of inflow
       ! In-Out -----------------------------------------------------------------
       ! Configuration
       yId                 , & ! Current Id of the LCover year scene
@@ -264,6 +272,9 @@ CONTAINS
     real(dp),                    intent(in) :: ntimesteps_day
     integer(i4),                 intent(in) :: TS
     logical,     dimension(:,:), intent(in) :: mask0
+    integer(i4),                 intent(in) :: nInflowGauges 
+    integer(i4), dimension(:)  , intent(in) :: InflowIndexList
+    integer(i4), dimension(:)  , intent(in) :: InflowNodeList
     real(dp),    dimension(:),   intent(in) :: global_parameters
 
     ! LUT
@@ -318,6 +329,9 @@ CONTAINS
     real(dp),    dimension(:),   intent(in) :: pet_in
     real(dp),    dimension(:),   intent(in) :: prec_in
     real(dp),    dimension(:),   intent(in) :: temp_in
+
+    ! discharge inflow
+    real(dp),    dimension(:),   intent(in) :: QInflow
 
     ! Configuration
     integer(i4),              intent(inout)   ::  yId
@@ -397,7 +411,9 @@ CONTAINS
     real(dp)               :: temp
 
     ! temporary arrays so that inout of routines is contiguous array
-    real(dp), dimension(:), allocatable :: tmp_infiltration, tmp_soilMoisture, tmp_aet_soil
+    real(dp), dimension(size(infiltration,2)) :: tmp_infiltration
+    real(dp), dimension(size(soilMoisture,2)) :: tmp_soilMoisture
+    real(dp), dimension(size(aet_soil,2))     :: tmp_aet_soil
 
     !-------------------------------------------------------------------
     ! date and month of this timestep
@@ -463,8 +479,8 @@ CONTAINS
         !           only in case when routing process is ON
         !-------------------------------------------------------------------
         if( processMatrix(8, 1) .NE. 0 ) then
-           CALL L11_fraction_sealed_floodplain( nNodes-1, LCover0, floodPlain0,       &
-                                                areaCell0, aFloodPlain11, 2, fFPimp11 )
+             CALL L11_fraction_sealed_floodplain( nNodes-1, LCover0, floodPlain0,       &
+                                                  areaCell0, aFloodPlain11, 2, fFPimp11 )
         end if
 
         !-------------------------------------------------------------------
@@ -541,14 +557,9 @@ CONTAINS
     ! HYDROLOGICAL PROCESSES at L1-LEVEL 
     !-------------------------------------------------------------------
 
-    ! allocate temp inout arrays for soil_moisture
-    if (.not. allocated(tmp_infiltration)) allocate(tmp_infiltration(size(infiltration,2)))
-    if (.not. allocated(tmp_soilMoisture)) allocate(tmp_soilMoisture(size(soilMoisture,2)))
-    if (.not. allocated(tmp_aet_soil))     allocate(tmp_aet_soil(size(aet_soil,2)))
-
     !$OMP parallel default(shared) &
-    !$OMP private(k, prec, pet, temp, tmp_infiltration, tmp_soilMoisture, tmp_aet_soil)
-    !$OMP do
+    !$OMP private(k, prec, pet, temp, tmp_soilmoisture, tmp_infiltration, tmp_aet_soil)
+    !$OMP do SCHEDULE(STATIC)
     do k = 1, nCells1
        
        ! temporal disaggreagtion of forcing variables
@@ -566,9 +577,9 @@ CONTAINS
             snowpack(k),                                                                       & ! Intent INOUT
             deg_day(k),                                                                        & ! Intent OUT
             melt(k), prec_effect(k), rain(k), snow(k) )                                          ! Intent OUT
-       tmp_infiltration(:) = infiltration(k,:)
-       tmp_soilMoisture(:) = soilMoisture(k,:)
 
+       tmp_soilMoisture(:) = soilMoisture(k,:)
+       tmp_infiltration(:) = infiltration(k,:)
        call soil_moisture( fSealed1(k), water_thresh_sealed(k),                                & ! Intent IN
             pet,  evap_coeff(month), soil_moist_sat(k,:), frac_roots(k,:), soil_moist_FC(k,:), & ! Intent IN
             wilting_point(k,:),  soil_moist_exponen(k,:), aet_canopy(k),                       & ! Intent IN
@@ -587,7 +598,7 @@ CONTAINS
        call runoff_sat_zone( k2(k),                                                            & ! Intent IN
             satStorage(k),                                                                     & ! Intent INOUT
             baseflow(k) )                                                                        ! Intent OUT
-            
+
        call L1_total_runoff( fSealed1(k), fast_interflow(k), slow_interflow(k), baseflow(k),   & ! Intent IN
             runoff_sealed(k),                                                                  & ! Intent IN
             total_runoff(k) )                                                                    ! Intent OUT
@@ -596,10 +607,6 @@ CONTAINS
     !$OMP end do
     !$OMP end parallel
 
-    deallocate(tmp_infiltration)
-    deallocate(tmp_soilMoisture)
-    deallocate(tmp_aet_soil)
-
     !-------------------------------------------------------------------
     ! routing at L11 level
     !-------------------------------------------------------------------
@@ -607,14 +614,19 @@ CONTAINS
 
        ! runoff accumulation at L11 from L1 level
        call L11_runoff_acc( total_runoff, areaCell1, L11Id_on_L1, TS,                          & ! Intent IN
+            nInflowGauges, InflowIndexList, InflowNodeList, QInflow,                           & ! Intent IN
             nNode_qOUT )                                                                         ! Intent OUT
-
-       ! routing of water within river reaches
-       call L11_routing( nNodes, nNodes-1, netPerm, nLink_fromN,                               & ! Intent IN
-            nLink_toN, nLink_C1, nLink_C2, nNode_qOUT,                                         & ! Intent IN
-            nNode_qTIN, nNode_qTR,                                                             & ! Intent INOUT
-            nNode_Qmod )                                                                         ! Intent OUT
-
+       ! for a single node model run
+       if( nNodes .GT. 1) then
+         ! routing of water within river reaches
+         call L11_routing( nNodes, nNodes-1, netPerm, nLink_fromN,                               & ! Intent IN
+              nLink_toN, nLink_C1, nLink_C2, nNode_qOUT,                                         & ! Intent IN
+              nNode_qTIN, nNode_qTR,                                                             & ! Intent INOUT
+              nNode_Qmod )                                                                         ! Intent OUT
+       else
+         nNode_Qmod(:) = nNode_qOUT(:) 
+       end if
+       !
     end if
     
   end subroutine mHM

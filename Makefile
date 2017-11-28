@@ -101,7 +101,7 @@ LIBNAME  := #mhm.a #libminpack.a # Name of library
 system   := eve
 # Compiler: intelX, gnuX, nagX, sunX, where X stands for version number, e.g. intel13;
 #   look at $(MAKEDPATH)/$(system).alias for shortcuts or type 'make info'
-compiler := intel
+compiler := gnu
 # Releases: debug, release
 release  := release
 # Netcdf versions (Network Common Data Form): netcdf3, netcdf4, [anything else]
@@ -111,11 +111,11 @@ lapack   :=
 # MKL (Intel's Math Kernel Library): mkl, mkl95, [anything else]
 mkl      :=
 # Proj4 (Cartographic Projections Library): true, [anything else]
-proj     := 
+proj     :=
 # IMSL (IMSL Numerical Libraries): vendor, imsl, [anything else]
 imsl     :=
 # OpenMP parallelization: true, [anything else]
-openmp   :=
+openmp   := 
 # Linking: static, shared, dynamic (last two are equal)
 static   := shared
 
@@ -155,8 +155,8 @@ static   := shared
 #                  This means that all tests do not work which use netcdf and/or lapack.
 #     -C=intovf    check integer overflow, which is intentional in UFZ mo_xor4096.
 EXTRA_FCFLAGS  :=
-EXTRA_F90FLAGS :=
-EXTRA_DEFINES  := 
+EXTRA_F90FLAGS := #-C=undefined
+EXTRA_DEFINES  :=
 EXTRA_INCLUDES :=
 EXTRA_LDFLAGS  :=
 EXTRA_LIBS     :=
@@ -237,9 +237,10 @@ endif
 #
 # --- CHECK 2 ---------------------------------------------------
 #
-compilers := $(shell ls -1 $(CONFIGPATH) | sed -e "/$(MAKEDSCRIPT)/d" -e '/f2html/d' -e '/alias/d' | grep $(system) | cut -d '.' -f 2 | sort | uniq)
+compilers := $(shell ls -1 $(CONFIGPATH) | sed -e "/$(MAKEDSCRIPT)/d" -e '/f2html/d' -e '/alias/d' -e '/~$$/d' | grep $(system) | cut -d '.' -f 2 | sort | uniq)
 gnucompilers := $(filter gnu%, $(compilers))
 nagcompilers := $(filter nag%, $(compilers))
+intelcompilers := $(filter intel%, $(compilers))
 ifeq (,$(findstring $(icompiler),$(compilers)))
     $(error Error: compiler '$(icompiler)' not found: configured compilers for system $(system) are $(compilers))
 endif
@@ -416,6 +417,14 @@ ifneq (,$(findstring $(mkl),mkl mkl95))
         endif
     endif
     RPATH += -Wl,-rpath,$(MKLLIB)
+
+    ifeq ($(openmp),true)
+	ifeq (,$(findstring $(icompiler),$(intelcompilers)))
+            iLIBS += -L$(INTELLIB) -liomp5
+            RPATH += -Wl,-rpath,$(INTELLIB)
+        endif
+    endif
+
 endif
 
 # --- NETCDF ---------------------------------------------------
@@ -439,31 +448,48 @@ ifneq (,$(findstring $(netcdf),netcdf3 netcdf4))
     endif
     iLIBS += -lnetcdf
 
-    ifeq (exists, $(shell if [ -d "$(NCDIR2)" ] ; then echo 'exists' ; fi))
-        NCINC2 ?= $(strip $(NCDIR2))/include
-        NCLIB2 ?= $(strip $(NCDIR2))/lib
+    ifeq (exists, $(shell if [ -d "$(NCFDIR)" ] ; then echo 'exists' ; fi))
+        NCFINC ?= $(strip $(NCFDIR))/include
+        NCFLIB ?= $(strip $(NCFDIR))/lib
 
-        INCLUDES += -I$(NCINC2)
+        INCLUDES += -I$(NCFINC)
         ifneq ($(ABSOFT),)
-            INCLUDES += -p $(NCINC2)
+            INCLUDES += -p $(NCFINC)
         endif
 
-        iLIBS += -L$(NCLIB2)
-        RPATH += -Wl,-rpath,$(NCLIB2)
-        ifeq (libnetcdff, $(shell ls $(NCLIB2)/libnetcdff.* 2> /dev/null | sed -n '1p' | sed -e 's/.*\(libnetcdff\)/\1/' -e 's/\(libnetcdff\).*/\1/'))
+        iLIBS += -L$(NCFLIB)
+        RPATH += -Wl,-rpath,$(NCFLIB)
+        ifeq (libnetcdff, $(shell ls $(NCFLIB)/libnetcdff.* 2> /dev/null | sed -n '1p' | sed -e 's/.*\(libnetcdff\)/\1/' -e 's/\(libnetcdff\).*/\1/'))
             iLIBS += -lnetcdff
         endif
     endif
 
     # other libraries for netcdf4, ignored for netcdf3
-    ifeq ($(netcdf),netcdf4)
-        iLIBS += -L$(HDF5LIB) -lhdf5_hl -lhdf5 -L$(SZLIB) -lsz -lz
-        RPATH += -Wl,-rpath,$(SZLIB) -Wl,-rpath,$(HDF5LIB)
-        ifneq ($(CURLLIB),)
-            iLIBS += -L$(CURLLIB) -lcurl
-            RPATH += -Wl,-rpath,$(CURLLIB)
+    ifeq ($(system),cygwin)
+        ifeq ($(netcdf),netcdf4)
+            iLIBS += -L$(HDF5LIB) -lhdf5_hl -lhdf5
+            RPATH += -Wl,-rpath,$(HDF5LIB)
+            ifneq ($(CURLLIB),)
+                iLIBS += -L$(CURLLIB) -lcurl
+                RPATH += -Wl,-rpath,$(CURLLIB)
+            endif
         endif
-   endif
+    else
+        ifeq ($(netcdf),netcdf4)
+            iLIBS += -L$(HDF5LIB) -lhdf5_hl -lhdf5 -L$(SZLIB) -lsz
+            ifneq ($(ZLIB),)
+                iLIBS += -L$(ZLIB) -lz
+                RPATH += -Wl,-rpath,$(ZLIB)
+            else
+                iLIBS += -lz
+            endif
+            RPATH += -Wl,-rpath,$(HDF5LIB) -Wl,-rpath,$(SZLIB)
+            ifneq ($(CURLLIB),)
+                iLIBS += -L$(CURLLIB) -lcurl
+                RPATH += -Wl,-rpath,$(CURLLIB)
+            endif
+        endif
+    endif
 endif
 
 # --- PROJ --------------------------------------------------
@@ -726,10 +752,12 @@ $(OBJS):
 ifneq (,$(findstring $(icompiler),gnu41 gnu42))
 	@nobj=$$(echo $(OBJS) | tr ' ' '\n' | grep -n -w -F $@ | sed 's/:.*//') ; \
 	src=$$(echo $(SRCS) | tr ' ' '\n' | sed -n $${nobj}p) ; \
-	echo $(F90) -E -x c $(DEFINES) $(INCLUDES) $(F90FLAGS) $${src} > .tmp.gf3 ; \
-	$(F90) -E -x c $(DEFINES) $(INCLUDES) $(F90FLAGS) $${src} > .tmp.gf3
-	$(F90) $(DEFINES) $(INCLUDES) $(F90FLAGS) $(MODFLAG)$(dir $@) -c .tmp.gf3 -o $@
-	rm .tmp.gf3
+	tmp=$@.$$(echo $${src} | sed 's/.*\.//') ; \
+	echo "$(F90) -E $(DEFINES) $(INCLUDES) $(F90FLAGS) $${src} | sed 's/^#[[:blank:]]\{1,\}[[:digit:]]\{1,\}.*$$//' > $${tmp}" ; \
+	$(F90) -E $(DEFINES) $(INCLUDES) $(F90FLAGS) $${src} | sed 's/^#[[:blank:]]\{1,\}[[:digit:]]\{1,\}.*$$//' > $${tmp} ; \
+	echo "$(F90) $(DEFINES) $(INCLUDES) $(F90FLAGS) $(MODFLAG)$(dir $@) -c $${tmp} -o $@" ; \
+	$(F90) $(DEFINES) $(INCLUDES) $(F90FLAGS) $(MODFLAG)$(dir $@) -c $${tmp} -o $@ ; \
+	rm $${tmp}
 else
 	@nobj=$$(echo $(OBJS) | tr ' ' '\n' | grep -n -w -F $@ | sed 's/:.*//') ; \
 	src=$$(echo $(SRCS) | tr ' ' '\n' | sed -n $${nobj}p) ; \
@@ -741,10 +769,12 @@ $(FOBJS):
 ifneq (,$(findstring $(icompiler),gnu41 gnu42))
 	@nobj=$$(echo $(FOBJS) | tr ' ' '\n' | grep -n -w -F $@ | sed 's/:.*//') ; \
 	src=$$(echo $(FSRCS) | tr ' ' '\n' | sed -n $${nobj}p) ; \
-	echo $(FC) -E -x c $(DEFINES) $(INCLUDES) $(FCFLAGS) $$src > .tmp.gf3 ; \
-	$(FC) -E -x c $(DEFINES) $(INCLUDES) $(FCFLAGS) $$src > .tmp.gf3
-	$(FC) $(DEFINES) $(INCLUDES) $(FCFLAGS) -c .tmp.gf3 -o $@
-	rm .tmp.gf3
+	tmp=$@.$$(echo $${src} | sed 's/.*\.//') ; \
+	echo "$(FC) -E $(DEFINES) $(INCLUDES) $(FCFLAGS) $${src} | sed 's/^#[[:blank:]]\{1,\}[[:digit:]]\{1,\}.*$$//' > $${tmp}" ; \
+	$(FC) -E $(DEFINES) $(INCLUDES) $(FCFLAGS) $${src} | sed 's/^#[[:blank:]]\{1,\}[[:digit:]]\{1,\}.*$$//' > $${tmp} ; \
+	echo "$(FC) $(DEFINES) $(INCLUDES) $(FCFLAGS) -c $${tmp} -o $@" ; \
+	$(FC) $(DEFINES) $(INCLUDES) $(FCFLAGS) -c $${tmp} -o $@ ; \
+	rm $${tmp}
 else
 	@nobj=$$(echo $(FOBJS) | tr ' ' '\n' | grep -n -w -F $@ | sed 's/:.*//') ; \
 	src=$$(echo $(FSRCS) | tr ' ' '\n' | sed -n $${nobj}p) ; \
@@ -794,20 +824,20 @@ endif
 	for i in $(shell ls -d $(CHECKPATH)/test* $(CHECKPATH)/check*) ; do \
 	    rm -f "$(PROGNAME)" ; \
 	    j=$${i/minpack/maxpack} ; \
-	    ldextra= ; \
+	    libextra= ; \
 	    if [ $$i != $$j ] ; then \
 	    	 $(MAKE) -s MAKEDPATH=$(MAKEDPATH) SRCPATH="$$i"/../../minpack PROGPATH=$(PROGPATH) \
 	    	      CONFIGPATH=$(CONFIGPATH) PROGNAME= LIBNAME=libminpack.a system=$(system) \
 	    	      release=$(release) netcdf=$(netcdf) static=$(static) proj=$(proj) \
 	    	      imsl=$(imsl) mkl=$(mkl) lapack=$(lapack) compiler=$(compiler) \
 	    	      openmp=$(openmp) > /dev/null ; \
-                 ldextra="-L. -lminpack" ; \
+                 libextra="-L. -lminpack" ; \
 	    fi ; \
 	    $(MAKE) -s MAKEDPATH=$(MAKEDPATH) SRCPATH=$$i PROGPATH=$(PROGPATH) \
 	         CONFIGPATH=$(CONFIGPATH) PROGNAME=$(PROGNAME) system=$(system) \
 	         release=$(release) netcdf=$(netcdf) static=$(static) proj=$(proj) \
 	         imsl=$(imsl) mkl=$(mkl) lapack=$(lapack) compiler=$(compiler) \
-	         openmp=$(openmp) EXTRA_LDFLAGS="$$ldextra" > /dev/null \
+	         openmp=$(openmp) NOMACWARN=true EXTRA_LIBS="$$libextra" > /dev/null \
 	    && { $(PROGNAME) 2>&1 | grep -E '(o\.k\.|failed)' ;} ; status=$$? ; \
 	    if [ $$status != 0 ] ; then echo "$$i failed!" ; fi ; \
 	    $(MAKE) -s SRCPATH=$$i cleanclean ; \
