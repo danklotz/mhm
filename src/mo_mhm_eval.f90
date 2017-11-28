@@ -49,17 +49,20 @@ CONTAINS
   !     INTENT(OUT), OPTIONAL
   !>        \param[out] "real(dp), dimension(:,:), optional  :: runoff" 
   !>           returns runoff time series, DIMENSION [nTimeSteps, nGaugesTotal]
+  !>        \param[out] "real(dp), dimension(:,:), optional  :: sm_opti" 
+  !>           returns soil moisture time series for all grid cells (of multiple basins concatenated), DIMENSION [nCells, nTimeSteps]
 
   !     RETURN
   !         None
 
   !     RESTRICTIONS
-  !
+  !         None
 
   !     EXAMPLE
-  !        
+  !         None
 
   !     LITERATURE
+  !         None
 
   !     HISTORY
   !>        \author Juliane Mai, Rohini Kumar
@@ -79,8 +82,9 @@ CONTAINS
   !                   Stephan Thober,       Jun 2014 - added chunk read for meteorological input
   !                   Stephan Thober,       Jun 2014 - updated flag for read_restart
   !                   Matthias Cuntz & Juliane Mai, Nov 2014 - LAI input from daily, monthly or yearly files
+  !                   Matthias Zink,        Dec 2014 - adopted inflow gauges to ignore headwater cells
 
-  SUBROUTINE mhm_eval(parameterset, runoff)
+  SUBROUTINE mhm_eval(parameterset, runoff, sm_opti)
 
     use mo_init_states,         only : get_basin_info
     use mo_init_states,         only : variables_default_init   ! default initalization of variables
@@ -98,7 +102,7 @@ CONTAINS
          timeStep_model_outputs, outputFlxState,             &  ! definition which output to write
          read_restart, perform_mpr, fracSealed_CityArea,     &
          timeStep_model_inputs,                              &
-         timeStep, nBasins, basin, simPer, readPer,          & 
+         timeStep, nBasins, basin, simPer, readPer,          & ! [h] simulation time step, No. of basins
          nGaugesTotal,                                       &
          processMatrix, c2TSTu, HorizonDepth_mHM,            & 
          nSoilHorizons_mHM, NTSTEPDAY, timeStep,             & 
@@ -120,7 +124,8 @@ CONTAINS
          L1_fPerm, L1_fSealed, L11_FracFPimp,                & 
          L11_aFloodPlain, L1_inter,                          & 
          L1_snowPack, L1_sealSTW, L1_soilMoist, L1_unsatSTW, & 
-         L1_satSTW, L1_aETSoil, L1_aETCanopy, L1_aETSealed,  & 
+         L1_satSTW, L1_pet_calc,                             &
+         L1_aETSoil, L1_aETCanopy, L1_aETSealed,             &
          L1_baseflow, L1_infilSoil, L1_fastRunoff, L1_melt,  & 
          L1_percol, L1_preEffect, L1_rain, L1_runoffSeal,    & 
          L1_slowRunoff, L1_snow, L1_Throughfall,             & 
@@ -132,17 +137,24 @@ CONTAINS
          L1_kSlowFlow, L1_kBaseFlow, L1_kPerco,              & 
          L1_soilMoistFC, L1_soilMoistSat, L1_soilMoistExp,   & 
          L1_tempThresh, L1_unsatThresh, L1_sealedThresh,     & 
-         L1_wiltingPoint, L11_C1, L11_C2,                    &
+         L1_wiltingPoint, L11_C1, L11_C2, L1_neutrons,       &
          warmingDays, evalPer, gauge, InflowGauge,           &  
          optimize,  nMeasPerDay,                             &
          timeStep_LAI_input,                                 & ! flag on how LAI data has to be read
-         L0_gridded_LAI, dirRestartIn                            ! restart directory location
-
+         L0_gridded_LAI, dirRestartIn,                       & ! restart directory location
+         timeStep_sm_input,                                  & ! time step of soil moisture input (day, month, year)
+         nSoilHorizons_sm_input,                             & ! no. of mhm soil horizons equivalent to sm input 
+         nTimeSteps_L1_sm                                      ! total number of timesteps in soil moisture input
+    
     implicit none
 
     real(dp), dimension(:),                          intent(in)  :: parameterset
     real(dp), dimension(:,:), allocatable, optional, intent(out) :: runoff       ! dim1=time dim2=gauge
+    real(dp), dimension(:,:), allocatable, optional, intent(out) :: sm_opti      ! dim1=ncells, dim2=time
 
+    ! -------------------------------------
+    ! local variables
+    !
     ! FOR WRITING GRIDDED STATES AND FLUXES 
     integer(i4)                           :: hh                  ! Counter
     integer(i4)                           :: ncid                ! netcdf fileID
@@ -154,6 +166,7 @@ CONTAINS
     real(dp), dimension(:),   allocatable :: L1_sealSTW_out      ! Retention storage of impervious areas
     real(dp), dimension(:),   allocatable :: L1_unsatSTW_out     ! Upper soil storage
     real(dp), dimension(:),   allocatable :: L1_satSTW_out       ! Groundwater storage
+    real(dp), dimension(:),   allocatable :: L1_neutrons_out     ! Ground albedo neutrons
     ! Fluxes L1
     real(dp), dimension(:),   allocatable :: L1_pet_out          ! potential evapotranpiration (PET)
     real(dp), dimension(:,:), allocatable :: L1_aETSoil_out      ! actual ET of each horizon
@@ -166,16 +179,18 @@ CONTAINS
     real(dp), dimension(:),   allocatable :: L1_baseflow_out     ! Baseflow
     real(dp), dimension(:),   allocatable :: L1_percol_out       ! Percolation
     real(dp), dimension(:,:), allocatable :: L1_infilSoil_out    ! Infiltration 
-
-    ! local variables
+    !
+    ! counters and indexes
     integer(i4)                               :: nTimeSteps
+    integer(i4)                               :: maxTimeSteps
     integer(i4)                               :: ii, tt, gg, ll   ! Counters
-    integer(i4)                               :: nCells 
-    integer(i4)                               :: nNodes
-    integer(i4)                               :: s0, e0
-    integer(i4)                               :: s1, e1
-    ! process case dependent length specefiers of vectors to pass to mHM
-    integer(i4), dimension(6)                 :: iMeteo_p5        ! meteolrological time step for process 5 (PET)
+    integer(i4)                               :: nCells           ! No. of cells at level 1 for current basin
+    integer(i4)                               :: nNodes           !
+    integer(i4)                               :: s0, e0           ! start and end index at level 0 for current basin
+    integer(i4)                               :: s1, e1           ! start and end index at level 1 for current basin
+    !
+    ! process case dependent length specifiers of vectors to pass to mHM
+    integer(i4), dimension(6)                 :: iMeteo_p5        ! meteorological time step for process 5 (PET)
     integer(i4), dimension(6)                 :: s_p5, e_p5       ! process 5: start and end index of vectors
     !                                                             ! index 1: pet
     !                                                             ! index 2: tmin
@@ -198,37 +213,44 @@ CONTAINS
     real(dp)                                  :: multiplier       ! for averaging output
     logical                                   :: writeout         ! if true write out netcdf files
     integer(i4)                               :: writeout_counter ! write out time step
-
+    !
     ! for discharge timeseries
     integer(i4)                               :: iday, iS, iE
     real(dp), dimension(:,:), allocatable     :: d_Qmod
-
+    !
     ! LAI options
     integer(i4)                               :: day_counter
     integer(i4)                               :: month_counter
     real(dp), dimension(:), allocatable       :: LAI            ! local variable for leaf area index
-
-    !----------------------------------------------------------
-    ! estimate total modeling timesteps including warming days
-    !----------------------------------------------------------
-    nTimeSteps = ( simPer%julEnd - simPer%julStart + 1 ) * NTSTEPDAY
-
+    
     !----------------------------------------------------------
     ! Check optionals and initialize
     !----------------------------------------------------------
     if ( present(runoff) ) then
        if ( processMatrix(8, 1) .eq. 0 ) then
-          call message("ERROR: runoff can not be produced, since routing process is off in Process Matrix")
+          call message("***ERROR: runoff can not be produced, since routing process is off in Process Matrix")
           stop
        else 
-          allocate( runoff(nTimeSteps, nGaugesTotal) )
+          !----------------------------------------------------------
+          ! estimate maximum modeling timesteps including warming days
+          !----------------------------------------------------------
+          maxTimeSteps = maxval( simPer(1:nBasins)%julEnd - simPer(1:nBasins)%julStart + 1 ) * NTSTEPDAY
+          allocate( runoff(maxTimeSteps, nGaugesTotal) )
           runoff = nodata_dp
        end if
     else 
-       if ( processMatrix(8,1) .gt. 0 ) then
-          call message("ERROR: runoff can not be produced, since runoff variable is not present")
+       if ( (processMatrix(8,1) .gt. 0) .AND. (.NOT. optimize)) then
+          call message("***ERROR: runoff can not be produced, since runoff variable is not present")
           stop
        end if
+    end if
+    ! soil mosiure optimization
+    !--------------------------
+    if ( present(sm_opti) ) then
+       !                ! total No of cells, No of timesteps
+       !                ! of all basins    , in soil moist input
+       allocate(sm_opti(size(L1_pre, dim=1), nTimeSteps_L1_sm))
+       sm_opti(:,:) = 0.0_dp ! has to be intialized with zero because later summation
     end if
     ! add other optionals...
 
@@ -256,11 +278,14 @@ CONTAINS
     !----------------------------------------
     do ii = 1, nBasins
 
+       ! calculate NtimeSteps for this basin
+       nTimeSteps = ( simPer(ii)%julEnd - simPer(ii)%julStart + 1 ) * NTSTEPDAY
+
        ! reinitialize time counter for LCover and MPR
        ! -0.5 is due to the fact that dec2date routine 
        !   changes the day at 12:00 in NOON
        ! Whereas mHM needs day change at 00:00 h
-       newTime = real(simPer%julStart,dp)
+       newTime = real(simPer(ii)%julStart,dp)
        yId     = 0
 
        ! get basin information
@@ -288,7 +313,7 @@ CONTAINS
        iGridLAI_TS = 0
        do tt = 1, nTimeSteps
 
-          if ( timeStep_model_inputs .eq. 0_i4 ) then
+          if ( timeStep_model_inputs(ii) .eq. 0_i4 ) then
              ! whole meteorology is already read
 
              ! set start and end of meteo position
@@ -297,14 +322,14 @@ CONTAINS
              ! time step for meteorological variable (daily values)
              iMeteoTS = ceiling( real(tt,dp) / real(NTSTEPDAY,dp) )             
           else
-             ! read chunk of meteorological forcings data (reading, upscaling or downscaling) 
+             ! read chunk of meteorological forcings data (reading, upscaling/downscaling) 
              call prepare_meteo_forcings_data(ii, tt)
              ! set start and end of meteo position
              s_meteo = 1
              e_meteo = e1 - s1 + 1
              ! time step for meteorological variable (daily values)
              iMeteoTS = ceiling( real(tt,dp) / real(NTSTEPDAY,dp) ) &
-                  - ( readPer%julStart - simPer%julStart )             
+                  - ( readPer%julStart - simPer(ii)%julStart )             
           end if
 
           hour = mod(hour+timestep, 24)
@@ -403,11 +428,11 @@ CONTAINS
                tt, newTime-0.5_dp, processMatrix, c2TSTu, HorizonDepth_mHM,                 & ! IN C
                nCells, nNodes, nSoilHorizons_mHM, real(NTSTEPDAY,dp), timeStep, mask0,      & ! IN C 
                basin%nInflowGauges(ii), basin%InflowGaugeIndexList(ii,:),                   & ! IN C
-               basin%InflowGaugeNodeList(ii,:),                                             & ! IN C
+               basin%InflowGaugeHeadwater(ii,:), basin%InflowGaugeNodeList(ii,:),           & ! IN C
                parameterset,                                                                & ! IN P
-               LCyearId(year), GeoUnitList, GeoUnitKar, LAIUnitList, LAILUT,                & ! IN L0
+               LCyearId(year,ii), GeoUnitList, GeoUnitKar, LAIUnitList, LAILUT,             & ! IN L0
                L0_slope_emp(s0:e0), L0_Id(s0:e0), L0_soilId(s0:e0), L0_LCover_LAI(s0:e0),   & ! IN L0
-               L0_LCover(s0:e0, LCyearId(year)), L0_asp(s0:e0), LAI(s0:e0),                 & ! IN L0
+               L0_LCover(s0:e0, LCyearId(year,ii)), L0_asp(s0:e0), LAI(s0:e0),              & ! IN L0
                L0_geoUnit(s0:e0), L0_areaCell(s0:e0),L0_floodPlain(s110:e110),              & ! IN L0
                soilDB%is_present, soilDB%nHorizons, soilDB%nTillHorizons,                   & ! IN L0
                soilDB%sand, soilDB%clay, soilDB%DbM, soilDB%Wd, soilDB%RZdepth,             & ! IN L0
@@ -432,7 +457,8 @@ CONTAINS
                L1_fForest(s1:e1), L1_fPerm(s1:e1),  L1_fSealed(s1:e1),                      & ! INOUT L1 
                L11_FracFPimp(s11:e11), L11_aFloodPlain(s11:e11),                            & ! INOUT L11
                L1_inter(s1:e1), L1_snowPack(s1:e1), L1_sealSTW(s1:e1),                      & ! INOUT S 
-               L1_soilMoist(s1:e1,:), L1_unsatSTW(s1:e1), L1_satSTW(s1:e1),                 & ! INOUT S 
+               L1_soilMoist(s1:e1,:), L1_unsatSTW(s1:e1), L1_satSTW(s1:e1), L1_neutrons,    & ! INOUT S 
+               L1_pet_calc(s1:e1),                                                          & ! INOUT X
                L1_aETSoil(s1:e1,:), L1_aETCanopy(s1:e1), L1_aETSealed(s1:e1),               & ! INOUT X
                L1_baseflow(s1:e1), L1_infilSoil(s1:e1,:), L1_fastRunoff(s1:e1),             & ! INOUT X
                L1_melt(s1:e1), L1_percol(s1:e1), L1_preEffect(s1:e1), L1_rain(s1:e1),       & ! INOUT X
@@ -450,6 +476,7 @@ CONTAINS
                L1_wiltingPoint(s1:e1,:),                                                    & ! INOUT E1
                L11_C1(s11:e11), L11_C2(s11:e11)                                             ) ! INOUT E11
 
+
           ! update the counters
           if (day_counter   .NE. day  ) day_counter   = day
           if (month_counter .NE. month) month_counter = month
@@ -462,7 +489,7 @@ CONTAINS
           if (.not. optimize) then
 
              ! output only for evaluation period
-             tIndex_out = (tt-warmingDays*NTSTEPDAY) ! tt if write out of warming period
+             tIndex_out = (tt-warmingDays(ii)*NTSTEPDAY) ! tt if write out of warming period
 
              if ((any(outputFlxState)) .and. (tIndex_out .gt. 0_i4)) then
 
@@ -483,6 +510,7 @@ CONTAINS
                         L1_sealSTW_out         , & ! Retention storage of impervious areas
                         L1_unsatSTW_out        , & ! Upper soil storage
                         L1_satSTW_out          , & ! Groundwater storage
+                        L1_neutrons_out        , & ! ground albedo neutrons
                         ! Inout: Fluxes L1
                         L1_pet_out             , & ! potential evapotranspiration (PET)
                         L1_aETSoil_out         , & ! actual ET
@@ -512,10 +540,11 @@ CONTAINS
                 if (outputFlxState(6) ) L1_sealSTW_out  (:)   = L1_sealSTW_out  (:)   + L1_sealSTW  (s1:e1)
                 if (outputFlxState(7) ) L1_unsatSTW_out (:)   = L1_unsatSTW_out (:)   + L1_unsatSTW (s1:e1)
                 if (outputFlxState(8) ) L1_satSTW_out   (:)   = L1_satSTW_out   (:)   + L1_satSTW   (s1:e1)
+                if (outputFlxState(18) ) L1_neutrons_out(:)   = L1_neutrons_out (:)   + L1_neutrons (s1:e1)
 
                 ! Fluxes L1  --> AGGREGATED
                 if (outputFlxState(9) ) &
-                     L1_pet_out(:)          = L1_pet(s1:e1, iMeteoTS)         !+ L1_pet_out(:)
+                     L1_pet_out(:)          = L1_pet_out(:)        + L1_pet_calc(s1:e1)
                 if (outputFlxState(10)      ) then
                    do hh = 1, nSoilHorizons_mHM
                       L1_aETSoil_out(:,hh)  = L1_aETSoil_out(:,hh) + L1_aETSoil(s1:e1,hh)*(1.0_dp - L1_fSealed(s1:e1))
@@ -565,13 +594,14 @@ CONTAINS
                 if (writeout) then
                    ! Average States
                    multiplier = 1.0_dp/real(average_counter,dp)
-                   if (outputFlxState(1)) L1_inter_out(:)    = L1_inter_out(:) * multiplier
+                   if (outputFlxState(1)) L1_inter_out(:)    = L1_inter_out(:)    * multiplier
                    if (outputFlxState(2)) L1_snowPack_out(:) = L1_snowPack_out(:) * multiplier
                    if (outputFlxState(3) .OR. outputFlxState(4) .OR. outputFlxState(5)) &
                         L1_soilMoist_out(:,:) = L1_soilMoist_out(:,:) * multiplier
-                   if (outputFlxState(6)) L1_sealSTW_out(:)  = L1_sealSTW_out(:) * multiplier
+                   if (outputFlxState(6)) L1_sealSTW_out(:)  = L1_sealSTW_out(:)  * multiplier
                    if (outputFlxState(7)) L1_unsatSTW_out(:) = L1_unsatSTW_out(:) * multiplier
-                   if (outputFlxState(8)) L1_satSTW_out(:)   = L1_satSTW_out(:) * multiplier
+                   if (outputFlxState(8)) L1_satSTW_out(:)   = L1_satSTW_out(:)   * multiplier
+                   if (outputFlxState(18)) L1_neutrons_out(:)= L1_neutrons_out(:) * multiplier
 
                    average_counter = 0
 
@@ -585,6 +615,7 @@ CONTAINS
                         L1_sealSTW_out           , & ! Retention storage of impervious areas
                         L1_unsatSTW_out          , & ! Upper soil storage
                         L1_satSTW_out            , & ! Groundwater storage
+                        L1_neutrons_out          , & ! ground albedo neutrons
                         ! Fluxes L1
                         L1_pet_out               , & ! potential evapotranspiration (PET)
                         L1_aETSoil_out           , & ! actual ET
@@ -609,6 +640,7 @@ CONTAINS
                    if (outputFlxState(6)  ) L1_sealSTW_out(:)      = 0.0_dp      
                    if (outputFlxState(7)  ) L1_unsatSTW_out(:)     = 0.0_dp      
                    if (outputFlxState(8)  ) L1_satSTW_out(:)       = 0.0_dp      
+                   if (outputFlxState(18)  ) L1_neutrons_out(:)    = 0.0_dp      
                    ! Fluxes L1
                    if (outputFlxState(9)  ) L1_pet_out(:)          = 0.0_dp     
                    if (outputFlxState(10) ) L1_aETSoil_out(:,:)    = 0.0_dp     
@@ -635,6 +667,7 @@ CONTAINS
                    if (outputFlxState(6)  ) deallocate( L1_sealSTW_out     )        
                    if (outputFlxState(7)  ) deallocate( L1_unsatSTW_out    )        
                    if (outputFlxState(8)  ) deallocate( L1_satSTW_out      )        
+                   if (outputFlxState(18)  ) deallocate( L1_neutrons_out   )        
                    ! Fluxes L1
                    if (outputFlxState(9)   ) deallocate( L1_pet_out        )    
                    if (outputFlxState(10)  ) deallocate( L1_aETSoil_out    )    
@@ -651,7 +684,7 @@ CONTAINS
                 end if
                 !
              end if
-          end if
+          end if ! <-- if (.not. optimize)
 
           !----------------------------------------------------------------------
           ! FOR STORING the optional arguments
@@ -665,6 +698,50 @@ CONTAINS
              do gg = 1, basin%nGauges(ii)
                 runoff(tt,basin%gaugeIndexList(ii,gg)) = L11_Qmod( basin%gaugeNodeList(ii,gg) + s11 - 1 )
              end do
+          end if
+
+          !----------------------------------------------------------------------
+          ! FOR SOIL MOISTURE
+          ! NOTE:: modeled soil moisture is averaged according to input time step
+          !        soil moisture (timeStep_sm_input)
+          !----------------------------------------------------------------------
+          if (present(sm_opti)) then
+             if ( tt .EQ. 1 ) writeout_counter = 1
+             ! only for evaluation period - ignore warming days
+             if ( (tt-warmingDays(ii)*NTSTEPDAY) .GT. 0 ) then
+                ! decide for daily, monthly or yearly aggregation
+                select case(timeStep_sm_input)
+                case(-1) ! daily
+                   if (day   .NE. day_counter)   then
+                      sm_opti(s1:e1,writeout_counter) = sm_opti(s1:e1,writeout_counter) / real(average_counter,dp)
+                      writeout_counter = writeout_counter + 1
+                      average_counter = 0
+                   end if
+                case(-2) ! monthly
+                   if (month .NE. month_counter) then
+                      sm_opti(s1:e1,writeout_counter) = sm_opti(s1:e1,writeout_counter) / real(average_counter,dp)
+                      writeout_counter = writeout_counter + 1
+                      average_counter = 0
+                   end if
+                case(-3) ! yearly
+                   if (year  .NE. year_counter)  then
+                      sm_opti(s1:e1,writeout_counter) = sm_opti(s1:e1,writeout_counter) / real(average_counter,dp)
+                      writeout_counter = writeout_counter + 1
+                      average_counter = 0
+                   end if
+                end select
+
+                ! last timestep is already done - write_counter exceeds size(sm_opti, dim=2)
+                if (.not. (tt .eq. nTimeSteps) ) then
+                   ! aggregate soil moisture to needed time step for optimization
+                   sm_opti(s1:e1,writeout_counter) = sm_opti(s1:e1,writeout_counter) + &
+                        sum(L1_soilMoist   (s1:e1, 1:nSoilHorizons_sm_input), dim=2) / &
+                        sum(L1_soilMoistSat(s1:e1, 1:nSoilHorizons_sm_input), dim=2)
+                end if
+
+                ! increase average counter by one
+                average_counter = average_counter + 1
+             end if
           end if
 
        end do !<< TIME STEPS LOOP
@@ -684,7 +761,7 @@ CONTAINS
     ! --------------------------------------------------------------------------
     if( (.not. optimize) .AND. present(runoff) .AND. (nMeasPerDay .eq. 1) ) then
        !
-       ii = evalPer%julEnd - evalPer%julStart + 1
+       ii = maxval( evalPer(1:nBasins)%julEnd - evalPer(1:nBasins)%julStart + 1 )
        allocate( d_Qmod(ii, nGaugesTotal) ) 
        d_Qmod = 0.0_dp
 
@@ -692,7 +769,7 @@ CONTAINS
        do ii = 1, nBasins
           iDay = 0
           ! loop over timesteps
-          do tt = warmingDays*NTSTEPDAY+1, nTimeSteps, NTSTEPDAY
+          do tt = warmingDays(ii)*NTSTEPDAY+1, nTimeSteps, NTSTEPDAY
              iS = tt
              iE = tt + NTSTEPDAY - 1
              iDay = iDay + 1

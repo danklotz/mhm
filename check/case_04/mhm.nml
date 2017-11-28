@@ -177,6 +177,27 @@ dir_RestartOut(6)    = "output_b1/b6_"
 dir_Out(6)           = "output_b1/b6_"
 /
 
+!> data which are optionally needed for optimization
+&optional_data
+!> soil moisture data
+!> currently mhm can be calibrated against the fraction of moisture
+!> down to a specific mhm soil layer (integral over the layers)
+!> here soil moisture is defined as fraction between water content within the
+!> soil column and saturated water content (porosity). \n
+!
+!> directory to soil moisture data
+dir_soil_moisture(1)   = "test_basin/input/optional_data/"
+!> number of mHM soil layers (nSoilHorizons_mHM) which the soil moisture
+!> input is representative for (counted top to down)
+nSoilHorizons_sm_input = 1
+!> time stepping of the soil moisture input
+!>     -1: daily   SM values\n
+!>     -2: monthly SM values\n
+!>     -3: yearly  SM values\n
+!-----------------------------
+timeStep_sm_input = -2
+/
+
 !
 !******************************************************************************************
 ! MAIN  
@@ -218,7 +239,7 @@ resolution_Hydrology(6) = 24000
 !> level-1 hydrological simulations resolution \n
 !-----------------------------------------------------------------------------
 resolution_Routing(1)   = 24000 
-resolution_Routing(2)   = 12000
+resolution_Routing(2)   = 24000
 resolution_Routing(3)   = 24000
 resolution_Routing(4)   = 24000
 resolution_Routing(5)   = 12000
@@ -253,6 +274,8 @@ opti_method = 1
 !> (6) SSE  \n
 !> (7) -1.0 * loglikelihood with trend removed from absolute errors  \n
 !> (8) -1.0 * loglikelihood with trend removed from the relative errors and then lag(1)-autocorrelation removed  \n
+!> (9) 1.0 - KGE (Kling-Gupta efficiency measure)  \n
+!> (13) 1.0 - average temporal correlation of soil moisture  \n
 !> further functions can be implemented in mo_objective_function
 opti_function = 3
 !-----------------------------------------------------------------------------
@@ -261,6 +284,9 @@ opti_function = 3
 read_restart  = .FALSE.
 write_restart = .TRUE.
 perform_mpr   = .TRUE.
+/
+
+&time_periods
 !-----------------------------------------------------------------------------
 !> specification of number of warming days [d] and the simulation period.\n
 !> All dynamic data sets(e.g., meteo. forcings, landcover scenes) should start 
@@ -277,19 +303,54 @@ perform_mpr   = .TRUE.
 !>    day, which is 2001/01/01 = 1), THEN all dynamic datasets should be given for
 !>    the effective modeling period of 2001/01/01 to 2003/12/31.
 !-----------------------------------------------------------------------------
-warmingDays          = 360
+warming_Days(1)       = 360
+warming_Days(2)       = 360
+warming_Days(3)       = 180
+warming_Days(4)       = 360
+warming_Days(5)       = 50
+warming_Days(6)       = 360
 !> first year of wanted simulation period
-evalPer%yStart       = 1990
+eval_Per(1)%yStart    = 1990
+eval_Per(2)%yStart    = 1991
+eval_Per(3)%yStart    = 1993
+eval_Per(4)%yStart    = 1990
+eval_Per(5)%yStart    = 1992
+eval_Per(6)%yStart    = 1991
 !> first month of wanted simulation period
-evalPer%mStart       = 01
+eval_Per(1)%mStart    = 01
+eval_Per(2)%mStart    = 01
+eval_Per(3)%mStart    = 01
+eval_Per(4)%mStart    = 01
+eval_Per(5)%mStart    = 01
+eval_Per(6)%mStart    = 01
 !> first day   of wanted simulation period
-evalPer%dStart       = 01
+eval_Per(1)%dStart    = 01
+eval_Per(2)%dStart    = 01
+eval_Per(3)%dStart    = 01
+eval_Per(4)%dStart    = 01
+eval_Per(5)%dStart    = 01
+eval_Per(6)%dStart    = 01
 !> last year   of wanted simulation period
-evalPer%yEnd         = 1993
+eval_Per(1)%yEnd      = 1993
+eval_Per(2)%yEnd      = 1992
+eval_Per(3)%yEnd      = 1993
+eval_Per(4)%yEnd      = 1993
+eval_Per(5)%yEnd      = 1993
+eval_Per(6)%yEnd      = 1993
 !> last month  of wanted simulation period
-evalPer%mEnd         = 12
+eval_Per(1)%mEnd      = 12
+eval_Per(2)%mEnd      = 12
+eval_Per(3)%mEnd      = 12
+eval_Per(4)%mEnd      = 12
+eval_Per(5)%mEnd      = 12
+eval_Per(6)%mEnd      = 12
 !> last day    of wanted simulation period
-evalPer%dEnd         = 31
+eval_Per(1)%dEnd      = 31
+eval_Per(2)%dEnd      = 31
+eval_Per(3)%dEnd      = 31
+eval_Per(4)%dEnd      = 31
+eval_Per(5)%dEnd      = 31
+eval_Per(6)%dEnd      = 31
 !> switch to control read input frequency of the gridded meteo input, 
 !> i.e. precipitation, potential evapotransiration, and temperature\n
 !>      >0: after each <timeStep_model_inputs> days\n
@@ -297,7 +358,14 @@ evalPer%dEnd         = 31
 !>      -1: daily\n
 !>      -2: monthly\n
 !>      -3: yearly\n
-timestep_model_inputs = 0
+!> if timestep_model_inputs is non-zero, than it has to be non-zero\n
+!> for all basins\n
+time_step_model_inputs(1) = 0
+time_step_model_inputs(2) = 0
+time_step_model_inputs(3) = 0
+time_step_model_inputs(4) = 0
+time_step_model_inputs(5) = 0
+time_step_model_inputs(6) = 0
 /
 
 !******************************************************************************************
@@ -416,6 +484,12 @@ processCase(7) = 1
 !> 0 - deactivated
 !> 1 - Muskingum approach
 processCase(8) = 1
+!> ground albedo of cosmic-ray neutrons
+!> THIS IS WORK IN PROGRESS, DO NOT USE FOR RESEARCH
+!> 0 - deactivated
+!> 1 - inverse N0 based on Desilets et al. 2010 
+!> 2 - COSMIC forward operator by Shuttlworth et al. 2013
+processCase(10) = 0
 /
 
 !******************************************************************************************

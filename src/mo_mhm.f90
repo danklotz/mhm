@@ -3,36 +3,36 @@
 !> \brief Call all main processes of mHM.
 
 !> \details This module calls all processes of mHM for a given configuration.
-!>          The configuration of the model is stored in the a process matrix
-!>          (this configuration is specified in the namelist mhm.nml.
-
+!>          The configuration of the model is stored in the a process matrix.
+!>          This configuration is specified in the namelist mhm.nml.
+!>
+!>          The processes are executed in ascending order. At the moment only
+!>          process 5 and 8 have options.\n
+!>          The MPR technique is only called either if the land cover has been
+!>          changed or for very first time step.\n 
+!>
 !>          Currently the following processes are implemented: \n
-
-!>          Process   | Name                      | Flag  | Description
-!>          --------- | ------------------------- | ----- | ------------------------------------------
-!>          1         | interception              | 1     | Maximum interception     
-!>          2         | snow and melting          | 1     | Degree-day
-!>          3         | soil moisture             | 1     | Infiltration capacity, Brooks-Corey  
-!>          4         | direct runoff             | 1     | Linear reservoir exceedance 
-!>          5         | PET                       | 0     | PET is read as input 
-!>                                                | 1     | Hargreaves-Samani
-!>                                                | 2     | Priestley-Taylor
-!>                                                | 3     | Penman-Monteith
-!>          6         | interflow                 | 1     | Nonlinear reservoir with saturation excess
-!>          7         | percolation and base flow | 1     | GW linear reservoir     
-!>          8         | routing                   | 1     | Muskingum
-
-!>          These processes are executed in ascending order. At the moment only process 5 and 8 have options.\n
-!>          The MPR technique is only called either if the land cover has been changed or for very first time step.\n 
+!>
+!>          Process    | Name                      | Flag  | Description                         
+!>          ---------- | ------------------------- | ----- | ------------------------------------------
+!>          1          | interception              | 1     | Maximum interception     
+!>          2          | snow and melting          | 1     | Degree-day
+!>          3          | soil moisture             | 1     | Infiltration capacity, Brooks-Corey  
+!>          4          | direct runoff             | 1     | Linear reservoir exceedance 
+!>          5          | PET                       | 0     | PET is read as input 
+!>          5          |         ''                | 1     | Hargreaves-Samani
+!>          5          |         ''                | 2     | Priestley-Taylor
+!>          5          |         ''                | 3     | Penman-Monteith
+!>          6          | interflow                 | 1     | Nonlinear reservoir with saturation excess
+!>          7          | percolation and base flow | 1     | GW linear reservoir     
+!>          8          | routing                   | 0     | no routing
+!>          8          |         ''                | 1     | Muskingum
+!>
   
 !> \author Luis Samaniego
 !> \date Dec 2012
 
 MODULE mo_mHM
-
-  ! This module provides the startup routines for mHM.
-
-  ! Written Luis Samaniego & Rohini Kumar, Dec 2012
 
   use mo_kind,          only: i4, dp
   use mo_mhm_constants, only: nodata_dp
@@ -41,9 +41,9 @@ MODULE mo_mHM
  
   IMPLICIT NONE
 
-  PRIVATE
-
   PUBLIC :: mHM      ! initialization sequence
+
+  PRIVATE
 
 CONTAINS
   ! ------------------------------------------------------------------
@@ -52,21 +52,20 @@ CONTAINS
   !         mHM
 
   !     PURPOSE
-  !>        \brief run mHM.
+  !>        \brief Pure mHM calculations.
 
-  !>        \details
-  !>
-  !>        mHM.\n
+  !>        \details Pure mHM calculations. All variables are allocated and initialized. \n
+  !>                 They will be local variables within this call. \n
   !>
 
   !     INTENT(IN)
-  !>        None
+  !         Has to be updated...
 
   !     INTENT(INOUT)
-  !         None
+  !         Has to be updated...
 
   !     INTENT(OUT)
-  !         None
+  !         Has to be updated...
 
   !     INTENT(IN), OPTIONAL
   !         None
@@ -78,15 +77,16 @@ CONTAINS
   !         None
 
   !     RETURN
-
+  !         None
 
   !     RESTRICTIONS
   !>       \note Fields must be consistent to DEM.
 
   !     EXAMPLE
-  !        none
+  !         None
 
   !     LITERATURE
+  !         None
 
   !     HISTORY
   !>        \author  Luis Samaniego & Rohini Kumar
@@ -107,9 +107,10 @@ CONTAINS
   !                  Matthias Zink,                  Mar 2014 - added inflow from upstream areas
   !                  Matthias Zink,                  Apr 2014 - added PET calculation: Priestley-Taylor and Penamn-Monteith 
   !                                                             and its parameterization (Process 5)
-  !                 Rohini Kumar,                    Apr 2014 - mHM run with a single L0 grid cell, also in the routing mode
-  !                 Stephan Thober,                  Jun 2014 - added flag for switching of MPR
-  !                 Matthias Cuntz & Juliane Mai     Nov 2014 - LAI input from daily, monthly or yearly files
+  !                  Rohini Kumar,                   Apr 2014 - mHM run with a single L0 grid cell, also in the routing mode
+  !                  Stephan Thober,                 Jun 2014 - added flag for switching of MPR
+  !                  Matthias Cuntz & Juliane Mai    Nov 2014 - LAI input from daily, monthly or yearly files
+  !                  Matthias Zink,                  Dec 2014 - adopted inflow gauges to ignore headwater cells
   ! ------------------------------------------------------------------
 
   subroutine mHM(  &
@@ -135,6 +136,7 @@ CONTAINS
       mask0               , & ! mask 0 for MPR
       nInflowGauges       , & ! number of inflow gauges
       InflowIndexList     , & ! list of indices for inflow gauges
+      InflowHeadwater     , & ! flag if headwater cells should be considered
       InflowNodeList      , & ! list of L11 ID for inflow gauges
       global_parameters   , & ! global mHM parameters
       ! LUT
@@ -185,7 +187,7 @@ CONTAINS
       fnight_pet          , & ! [-] night ratio PET  < 1
       fday_temp           , & ! [-] day factor mean temp
       fnight_temp         , & ! [-] night factor mean temp
-      pet_in              , & ! [mm d-1] Daily potential evapotranspiration (INOUT)
+      pet_in              , & ! [mm d-1] Daily potential evapotranspiration (input)
       tmin_in             , & ! [degc]   Daily minimum temperature
       tmax_in             , & ! [degc]   Daily maxumum temperature
       netrad_in           , & ! [w m2]   Daily average net radiation
@@ -211,7 +213,9 @@ CONTAINS
       soilMoisture        , & ! Soil moisture of each horizon
       unsatStorage        , & ! Upper soil storage
       satStorage          , & ! Groundwater storage
+      neutrons            , & ! Ground albedo neutrons
       ! Fluxes L1
+      pet_calc            , & ! [mm TST-1] estimated PET (if PET is input = corrected values (fAsp*PET))
       aet_soil            , & ! actual ET
       aet_canopy          , & ! Real evaporation intensity from canopy
       aet_sealed          , & ! Actual ET from free-water surfaces
@@ -270,6 +274,7 @@ CONTAINS
     use mo_canopy_interc ,          only: canopy_interc
     use mo_snow_accum_melt,         only: snow_accum_melt
     use mo_soil_moisture,           only: soil_moisture
+    use mo_neutrons,                only: DesiletsN0, COSMIC
     use mo_runoff,                  only: runoff_unsat_zone
     use mo_runoff,                  only: runoff_sat_zone
     use mo_runoff,                  only: L1_total_runoff 
@@ -283,8 +288,8 @@ CONTAINS
     implicit none
 
     ! Intent
-    logical,                     intent(in) :: perform_mpr   ! flag for reading restart files for state variables
-    logical,                     intent(in) :: read_states   ! indicated whether states have been read from file
+    logical,                     intent(in) :: perform_mpr          ! flag for reading restart files for state variables
+    logical,                     intent(in) :: read_states          ! indicated whether states have been read from file
     real(dp),                    intent(in) :: fSealedInCity        ! fraction of perfectly sealed area within cities
     integer(i4),                 intent(in) :: timeStep_LAI_input   ! time step of gridded LAI input
     integer(i4),                 intent(in) :: counter_year         ! counter to tackle the change of year
@@ -303,6 +308,7 @@ CONTAINS
     logical,     dimension(:,:), intent(in) :: mask0
     integer(i4),                 intent(in) :: nInflowGauges 
     integer(i4), dimension(:)  , intent(in) :: InflowIndexList
+    logical ,    dimension(:)  , intent(in) :: InflowHeadwater
     integer(i4), dimension(:)  , intent(in) :: InflowNodeList
     real(dp),    dimension(:),   intent(in) :: global_parameters
 
@@ -359,7 +365,7 @@ CONTAINS
     real(dp),    dimension(:),     intent(in)    :: fnight_pet
     real(dp),    dimension(:),     intent(in)    :: fday_temp
     real(dp),    dimension(:),     intent(in)    :: fnight_temp
-    real(dp),    dimension(:),     intent(inout) :: pet_in
+    real(dp),    dimension(:),     intent(in)    :: pet_in
     real(dp),    dimension(:),     intent(in)    :: tmin_in
     real(dp),    dimension(:),     intent(in)    :: tmax_in
     real(dp),    dimension(:),     intent(in)    :: netrad_in
@@ -388,8 +394,10 @@ CONTAINS
     real(dp),  dimension(:,:),     intent(inout) :: soilMoisture
     real(dp),  dimension(:),       intent(inout) :: unsatStorage
     real(dp),  dimension(:),       intent(inout) :: satStorage
+    real(dp),  dimension(:),       intent(inout) :: neutrons
 
     ! Fluxes L1
+    real(dp),  dimension(:),       intent(inout) :: pet_calc
     real(dp),  dimension(:,:),     intent(inout) :: aet_soil
     real(dp),  dimension(:),       intent(inout) :: aet_canopy
     real(dp),  dimension(:),       intent(inout) :: aet_sealed
@@ -449,9 +457,9 @@ CONTAINS
     integer(i4)            :: doy         ! doy of the year [1-365 or 1-366]
     integer(i4)            :: k           ! cell index
 
-    real(dp)               :: pet
-    real(dp)               :: prec
-    real(dp)               :: temp
+    real(dp)               :: pet         ! 
+    real(dp)               :: prec        ! 
+    real(dp)               :: temp        !
 
     ! temporary arrays so that inout of routines is contiguous array
     real(dp), dimension(size(infiltration,2)) :: tmp_infiltration
@@ -626,7 +634,7 @@ CONTAINS
        ! PET calculation
        select case (processMatrix(5,1))
        case(0) ! PET is input ! correct pet for every day only once at the first time step
-          if (hour .EQ. 0) pet_in(k) =  fAsp(k) * pet_in(k)
+          pet =  fAsp(k) * pet_in(k)
 
        case(1) ! HarSam
           ! estimate day of the year (doy) for approximation of the extraterrestrial radiation
@@ -634,27 +642,26 @@ CONTAINS
           !
           if (tmax_in(k) .LE. tmin_in(k)) call message('WARNING: tmax smaller tmin at doy ', &
                num2str(doy), ' in year ', num2str(year),' at cell', num2str(k),'!')
-          pet_in(k) = fAsp(k) * pet_hargreaves(HarSamCoeff(k), HarSamConst,  temp_in(k), tmax_in(k),   & 
+          
+          pet = fAsp(k) * pet_hargreaves(HarSamCoeff(k), HarSamConst,  temp_in(k), tmax_in(k),   &
                tmin_in(k), latitude(k), doy)                                                
 
        case(2) ! Priestley-Taylor
            ! Priestley Taylor is not defined for values netrad < 0.0_dp
-          pet_in(k) = pet_priestly( PrieTayAlpha(k,month), max(netrad_in(k), 0.0_dp), temp_in(k))  
+          pet = pet_priestly( PrieTayAlpha(k,month), max(netrad_in(k), 0.0_dp), temp_in(k))  
 
        case(3) ! Penman-Monteith
-          pet_in(k) = pet_penman  (max(netrad_in(k), 0.0_dp), temp_in(k), absvappres_in(k)/1000.0_dp, &
-                                   ! 100.0_dp, 100.0_dp) 
-                                   ! aeroResist(k,month) / windspeed_in(k), 100.0_dp)
-                                   aeroResist(k,month) / windspeed_in(k), surfResist(k,month))
+          pet = pet_penman  (max(netrad_in(k), 0.0_dp), temp_in(k), absvappres_in(k)/1000.0_dp, &
+               aeroResist(k,month) / windspeed_in(k), surfResist(k,month))
        end select
        
        ! temporal disaggreagtion of forcing variables
        call temporal_disagg_forcing( isday, ntimesteps_day, prec_in(k),                        & ! Intent IN
-            pet_in(k), temp_in(k), fday_prec(month), fday_pet(month),                          & ! Intent IN
+            pet, temp_in(k), fday_prec(month), fday_pet(month),                                & ! Intent IN
             fday_temp(month), fnight_prec(month), fnight_pet(month), fnight_temp(month),       & ! Intent IN
-            prec, pet, temp )                                                                    ! Intent OUT
+            prec, pet_calc(k), temp )                                                            ! Intent OUT
 
-       call canopy_interc( pet, interc_max(k), prec,                                           & ! Intent IN
+       call canopy_interc( pet_calc(k), interc_max(k), prec,                                   & ! Intent IN
             interc(k),                                                                         & ! Intent INOUT
             throughfall(k), aet_canopy(k) )                                                      ! Intent OUT
 
@@ -667,8 +674,8 @@ CONTAINS
        tmp_soilMoisture(:) = soilMoisture(k,:)
        tmp_infiltration(:) = infiltration(k,:)
        call soil_moisture( fSealed1(k), water_thresh_sealed(k),                                & ! Intent IN
-            pet,  evap_coeff(month), soil_moist_sat(k,:), frac_roots(k,:), soil_moist_FC(k,:), & ! Intent IN
-            wilting_point(k,:),  soil_moist_exponen(k,:), aet_canopy(k),                       & ! Intent IN
+            pet_calc(k), evap_coeff(month), soil_moist_sat(k,:), frac_roots(k,:),              & ! Intent IN
+            soil_moist_FC(k,:), wilting_point(k,:),  soil_moist_exponen(k,:), aet_canopy(k),   & ! Intent IN
             prec_effect(k), runoff_sealed(k), sealedStorage(k),                                & ! Intent INOUT
             tmp_infiltration(:), tmp_soilMoisture(:),                                          & ! Intent INOUT
             tmp_aet_soil(:), aet_sealed(k) )                                                     ! Intent OUT
@@ -700,20 +707,36 @@ CONTAINS
 
        ! runoff accumulation at L11 from L1 level
        call L11_runoff_acc( total_runoff, areaCell1, L11Id_on_L1, TS,                          & ! Intent IN
-            nInflowGauges, InflowIndexList, InflowNodeList, QInflow,                           & ! Intent IN
+            nInflowGauges, InflowIndexList, InflowHeadwater, InflowNodeList, QInflow,          & ! Intent IN
             nNode_qOUT )                                                                         ! Intent OUT
        ! for a single node model run
        if( nNodes .GT. 1) then
          ! routing of water within river reaches
-         call L11_routing( nNodes, nNodes-1, netPerm, nLink_fromN,                               & ! Intent IN
-              nLink_toN, nLink_C1, nLink_C2, nNode_qOUT,                                         & ! Intent IN
-              nNode_qTIN, nNode_qTR,                                                             & ! Intent INOUT
-              nNode_Qmod )                                                                         ! Intent OUT
+         call L11_routing( nNodes, nNodes-1, netPerm, nLink_fromN,                             & ! Intent IN
+              nLink_toN, nLink_C1, nLink_C2, nNode_qOUT,                                       & ! Intent IN
+              nInflowGauges, InflowHeadwater, InflowNodeList,                                  & ! Intent IN
+              nNode_qTIN, nNode_qTR,                                                           & ! Intent INOUT
+              nNode_Qmod )                                                                       ! Intent OUT
        else
          nNode_Qmod(:) = nNode_qOUT(:) 
        end if
        !
     end if
+    
+    !-------------------------------------------------------------------
+    ! Nested model: Neutrons state variable, related to soil moisture   
+    !-------------------------------------------------------------------
+    
+    ! based on soilMoisture 
+    ! TODO they again loop over all cells. Maybe move this to line 680 in the loop used above?
+    if ( processMatrix(10, 1) .eq. 1 ) &
+        call DesiletsN0( soilMoisture(:,:), horizon_depth(:), &
+                        global_parameters(processMatrix(10,3)-processMatrix(10,2)+1), &
+                        neutrons(:))
+    if ( processMatrix(10, 1) .eq. 2 ) &
+        call COSMIC( soilMoisture(:,:), horizon_depth(:), &
+                    global_parameters(processMatrix(10,3)-processMatrix(10,2)+2:processMatrix(10,3)), &
+                    neutrons(:))
     
   end subroutine mHM
 

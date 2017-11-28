@@ -39,6 +39,7 @@ INTELBIN := $(INTEL)/bin/intel64
 F90 := $(INTELBIN)/ifort
 FC  := $(F90)
 CC  := $(INTELBIN)/icc
+CPP := /usr/bin/cpp
 ifeq ($(release),debug)
     F90FLAGS += -warn all -g -debug -traceback -fp-stack-check -O0 -debug
     F90FLAGS += -check all
@@ -51,7 +52,7 @@ else
     FCFLAGS  += -O3 -vec-report0 -override-limits
     CFLAGS   += -O3
 endif
-F90FLAGS += -assume byterecl -cpp -fp-model source -m64 -assume realloc-lhs # precise -> source: suppress warning, computation identical
+F90FLAGS += -nofixed -assume byterecl -cpp -fp-model source -m64 -assume realloc-lhs # precise -> source: suppress warning, computation identical
 MODFLAG  := -module # space significant
 FCFLAGS  += -assume byterecl -cpp -fp-model source -m64 -fixed
 CFLAGS   += -m64 -std=c99
@@ -103,6 +104,9 @@ FPROJDIR := /usr/local/fproj/4.7.0_intel11.1.075
 LAPACKDIR   := /usr/local/lapack/3.5.0-1_gcc_4.8.1_CentOS6
 GFORTRANDIR := /usr/local/gcc/4.8.1-3_CentOS6/
 GFORTRANLIB := $(GFORTRANDIR)/lib64
+
+# MPI
+MPIDIR := /usr/local/openmpi/intel/1.8.4-2
 
 # Documentation
 DOXYGENDIR := /usr/local/doxygen/1.8.7-1_gcc_4.8.1_CentOS6/bin

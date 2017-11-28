@@ -109,7 +109,9 @@ MODULE mo_append
   !>       \date Aug 2012
   !        Modified Matthias Cuntz, Jan 2013 - removed 256 character restriction
   !        Modified Matthias Cuntz, Feb 2013 - logical append and paste
+  !        Modified Matthias Zink,  Feb 2015 - added optional 'fill_value' for logical append
 
+  
   INTERFACE append
      MODULE PROCEDURE append_i4_v_s, append_i4_v_v, append_i4_m_m, &
           append_i8_v_s, append_i8_v_v, append_i8_m_m, &
@@ -267,26 +269,27 @@ CONTAINS
 
   END SUBROUTINE append_i4_v_v
 
-  SUBROUTINE append_i4_m_m(mat1, mat2)
+  SUBROUTINE append_i4_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     integer(i4), dimension(:,:), allocatable, intent(inout)   :: mat1
     integer(i4), dimension(:,:), intent(in)                   :: mat2
+    integer(i4), optional,       intent(in)                   :: fill_value
 
     ! local variables
     integer(i4)                               :: m1, m2    ! dim1 of matrixes: rows
     integer(i4)                               :: n1, n2    ! dim2 of matrixes: columns
     integer(i4), dimension(:,:), allocatable  :: tmp
 
-    m2 = size(mat2,1)   ! rows
+    m2 = size(mat2,1)    ! rows
     n2 = size(mat2,2)    ! columns
 
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
 
-       if (n1 .ne. n2) then
+       if ((n1 .ne. n2) .and. .not. present(fill_value) ) then
           print*, 'append: columns of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -296,10 +299,27 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1+m2,n1))
-       mat1(1:m1,:)          = tmp(1:m1,:)
-       mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
-    else
+       if ( n1 .eq. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)          = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+       end if
+
+       if ( n1 .gt. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)                = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,   1:n2) = mat2(1:m2,:)
+          mat1(m1+1_i4:m1+m2,n2+1:n1) = fill_value
+       end if
+
+       if ( n1 .lt. n2 ) then
+          allocate(mat1(m1+m2,n2))
+          mat1(      1:m1,      1:n1) = tmp(1:m1,:)
+          mat1(      1:m1,   n1+1:n2) = fill_value
+          mat1(m1+1_i4:m1+m2,    :  ) = mat2(1:m2,:)
+       end if
+          
+   else
        n1 = 0_i4
 
        allocate(mat1(m2,n2))
@@ -372,26 +392,27 @@ CONTAINS
 
   END SUBROUTINE append_i8_v_v
 
-  SUBROUTINE append_i8_m_m(mat1, mat2)
+  SUBROUTINE append_i8_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     integer(i8), dimension(:,:), allocatable, intent(inout)   :: mat1
     integer(i8), dimension(:,:), intent(in)                   :: mat2
-
+    integer(i8), optional,       intent(in)                   :: fill_value
+    
     ! local variables
     integer(i4)                               :: m1, m2    ! dim1 of matrixes: rows
     integer(i4)                               :: n1, n2    ! dim2 of matrixes: columns
     integer(i8), dimension(:,:), allocatable  :: tmp
 
-    m2 = size(mat2,1)   ! rows
+    m2 = size(mat2,1)    ! rows
     n2 = size(mat2,2)    ! columns
 
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
 
-       if (n1 .ne. n2) then
+       if ((n1 .ne. n2) .and. .not. present(fill_value) ) then
           print*, 'append: columns of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -401,9 +422,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1+m2,n1))
-       mat1(1:m1,:)          = tmp(1:m1,:)
-       mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+       if ( n1 .eq. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)          = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+       end if
+
+       if ( n1 .gt. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)                = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,   1:n2) = mat2(1:m2,:)
+          mat1(m1+1_i4:m1+m2,n2+1:n1) = fill_value
+       end if
+
+       if ( n1 .lt. n2 ) then
+          allocate(mat1(m1+m2,n2))
+          mat1(      1:m1,      1:n1) = tmp(1:m1,:)
+          mat1(      1:m1,   n1+1:n2) = fill_value
+          mat1(m1+1_i4:m1+m2,    :  ) = mat2(1:m2,:)
+       end if
+
     else
        n1 = 0_i4
 
@@ -477,26 +515,27 @@ CONTAINS
 
   END SUBROUTINE append_sp_v_v
 
-  SUBROUTINE append_sp_m_m(mat1, mat2)
+  SUBROUTINE append_sp_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     real(sp), dimension(:,:), allocatable, intent(inout)   :: mat1
     real(sp), dimension(:,:), intent(in)                   :: mat2
+    real(sp), optional,       intent(in)                   :: fill_value
 
     ! local variables
     integer(i4)                               :: m1, m2    ! dim1 of matrixes: rows
     integer(i4)                               :: n1, n2    ! dim2 of matrixes: columns
     real(sp), dimension(:,:), allocatable     :: tmp
 
-    m2 = size(mat2,1)   ! rows
+    m2 = size(mat2,1)    ! rows
     n2 = size(mat2,2)    ! columns
 
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
 
-       if (n1 .ne. n2) then
+       if ((n1 .ne. n2) .and. .not. present(fill_value) ) then
           print*, 'append: columns of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -506,9 +545,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1+m2,n1))
-       mat1(1:m1,:)          = tmp(1:m1,:)
-       mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+      if ( n1 .eq. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)          = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+       end if
+
+       if ( n1 .gt. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)                = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,   1:n2) = mat2(1:m2,:)
+          mat1(m1+1_i4:m1+m2,n2+1:n1) = fill_value
+       end if
+
+       if ( n1 .lt. n2 ) then
+          allocate(mat1(m1+m2,n2))
+          mat1(      1:m1,      1:n1) = tmp(1:m1,:)
+          mat1(      1:m1,   n1+1:n2) = fill_value
+          mat1(m1+1_i4:m1+m2,    :  ) = mat2(1:m2,:)
+       end if
+
     else
        n1 = 0_i4
 
@@ -582,26 +638,27 @@ CONTAINS
 
   END SUBROUTINE append_dp_v_v
 
-  SUBROUTINE append_dp_m_m(mat1, mat2)
+  SUBROUTINE append_dp_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     real(dp), dimension(:,:), allocatable, intent(inout)   :: mat1
     real(dp), dimension(:,:), intent(in)                   :: mat2
+    real(dp), optional,       intent(in)                   :: fill_value
 
     ! local variables
     integer(i4)                               :: m1, m2    ! dim1 of matrixes: rows
     integer(i4)                               :: n1, n2    ! dim2 of matrixes: columns
     real(dp), dimension(:,:), allocatable     :: tmp
 
-    m2 = size(mat2,1)   ! rows
+    m2 = size(mat2,1)    ! rows
     n2 = size(mat2,2)    ! columns
 
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
 
-       if (n1 .ne. n2) then
+       if ((n1 .ne. n2) .and. .not. present(fill_value) ) then
           print*, 'append: columns of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -611,9 +668,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1+m2,n1))
-       mat1(1:m1,:)          = tmp(1:m1,:)
-       mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+       if ( n1 .eq. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)          = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+       end if
+
+       if ( n1 .gt. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)                = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,   1:n2) = mat2(1:m2,:)
+          mat1(m1+1_i4:m1+m2,n2+1:n1) = fill_value
+       end if
+
+       if ( n1 .lt. n2 ) then
+          allocate(mat1(m1+m2,n2))
+          mat1(      1:m1,      1:n1) = tmp(1:m1,:)
+          mat1(      1:m1,   n1+1:n2) = fill_value
+          mat1(m1+1_i4:m1+m2,    :  ) = mat2(1:m2,:)
+       end if
+
     else
        n1 = 0_i4
 
@@ -685,12 +759,13 @@ CONTAINS
 
   END SUBROUTINE append_char_v_v
 
-  SUBROUTINE append_char_m_m(mat1, mat2)
+  SUBROUTINE append_char_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     character(len=*), dimension(:,:), allocatable, intent(inout)   :: mat1
     character(len=*), dimension(:,:),              intent(in)      :: mat2
+    character(len=*), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                                 :: m1, m2    ! dim1 of matrixes: rows
@@ -704,7 +779,7 @@ CONTAINS
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
 
-       if (n1 .ne. n2) then
+       if ((n1 .ne. n2) .and. .not. present(fill_value) ) then
           print*, 'append: columns of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -714,10 +789,27 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1+m2,n1))
-       mat1(1:m1,:)          = tmp(1:m1,:)
-       mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
-    else
+       if ( n1 .eq. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)          = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+       end if
+
+       if ( n1 .gt. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)                = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,   1:n2) = mat2(1:m2,:)
+          mat1(m1+1_i4:m1+m2,n2+1:n1) = fill_value
+       end if
+
+       if ( n1 .lt. n2 ) then
+          allocate(mat1(m1+m2,n2))
+          mat1(      1:m1,      1:n1) = tmp(1:m1,:)
+          mat1(      1:m1,   n1+1:n2) = fill_value
+          mat1(m1+1_i4:m1+m2,    :  ) = mat2(1:m2,:)
+       end if
+
+   else
        n1 = 0_i4
 
        allocate(mat1(m2,n2))
@@ -790,13 +882,14 @@ CONTAINS
 
   END SUBROUTINE append_lgt_v_v
 
-  SUBROUTINE append_lgt_m_m(mat1, mat2)
+  SUBROUTINE append_lgt_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     logical, dimension(:,:), allocatable, intent(inout)   :: mat1
     logical, dimension(:,:), intent(in)                   :: mat2
-
+    logical, optional,       intent(in)                   :: fill_value
+    
     ! local variables
     integer(i4)                               :: m1, m2    ! dim1 of matrixes: rows
     integer(i4)                               :: n1, n2    ! dim2 of matrixes: columns
@@ -809,7 +902,7 @@ CONTAINS
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
 
-       if (n1 .ne. n2) then
+       if ( (n1 .ne. n2) .and. .not. present(fill_value) ) then
           print*, 'append: columns of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -819,9 +912,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1+m2,n1))
-       mat1(1:m1,:)          = tmp(1:m1,:)
-       mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+       if ( n1 .eq. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)          = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,:) = mat2(1:m2,:)
+       end if
+
+       if ( n1 .gt. n2 ) then
+          allocate(mat1(m1+m2,n1))
+          mat1(1:m1,:)                = tmp(1:m1,:)
+          mat1(m1+1_i4:m1+m2,   1:n2) = mat2(1:m2,:)
+          mat1(m1+1_i4:m1+m2,n2+1:n1) = fill_value
+       end if
+       
+       if ( n1 .lt. n2 ) then
+          allocate(mat1(m1+m2,n2))
+          mat1(      1:m1,      1:n1) = tmp(1:m1,:)
+          mat1(      1:m1,   n1+1:n2) = fill_value
+          mat1(m1+1_i4:m1+m2,    :  ) = mat2(1:m2,:)
+       end if
+       
     else
        n1 = 0_i4
 
@@ -867,12 +977,13 @@ CONTAINS
 
   END SUBROUTINE paste_i4_m_s
 
-  SUBROUTINE paste_i4_m_v(mat1, vec2)
+  SUBROUTINE paste_i4_m_v(mat1, vec2, fill_value)
 
     implicit none
 
     integer(i4), dimension(:,:), allocatable, intent(inout)   :: mat1
     integer(i4), dimension(:),                intent(in)      :: vec2
+    integer(i4), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                             :: m1, m2    ! dim1 of matrixes
@@ -885,7 +996,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -894,9 +1005,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(1:m2,n1+n2)      = vec2(1:m2)
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(1:m1,1:n1)       = tmp(:,1:n1)
+          mat1(1:m2,n1+n2)      = vec2(1:m2)
+       end if
+       
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+          mat1(m2+1:m1,n1+n2)   = fill_value
+       end if
+
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(m1+1:m2,1:n1)    = fill_value
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+       end if
+
     else
        n1 = 0_i4
        m1 = m2
@@ -907,12 +1035,13 @@ CONTAINS
 
   END SUBROUTINE paste_i4_m_v
 
-  SUBROUTINE paste_i4_m_m(mat1, mat2)
+  SUBROUTINE paste_i4_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     integer(i4), dimension(:,:), allocatable, intent(inout)   :: mat1
     integer(i4), dimension(:,:),              intent(in)      :: mat2
+    integer(i4), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                             :: m1, m2    ! dim1 of matrixes
@@ -925,7 +1054,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -934,9 +1063,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(:,1:n1)          = tmp(:,1:n1)
+          mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(    :  ,1:n1)          = tmp(:,1:n1)
+          mat1(   1:m2,n1+1_i4:n1+n2) = mat2(:,1:n2)
+          mat1(m2+1:m1,n1+1_i4:n1+n2) = fill_value
+       end if
+       
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,      1:n1   ) = tmp(:,1:n1)
+          mat1(m1+1:m2,      1:n1   ) = fill_value
+          mat1(    :  ,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+          
     else
        n1 = 0_i4
        m1 = m2
@@ -981,16 +1127,17 @@ CONTAINS
 
   END SUBROUTINE paste_i8_m_s
 
-  SUBROUTINE paste_i8_m_v(mat1, vec2)
+  SUBROUTINE paste_i8_m_v(mat1, vec2, fill_value)
 
     implicit none
 
     integer(i8), dimension(:,:), allocatable, intent(inout)   :: mat1
     integer(i8), dimension(:),                intent(in)      :: vec2
+    integer(i8), optional,                    intent(in)      :: fill_value
 
     ! local variables
-    integer(i4)                             :: m1, m2    ! dim1 of matrixes
-    integer(i4)                             :: n1, n2    ! dim2 of matrixes
+    integer(i4)                               :: m1, m2    ! dim1 of matrixes
+    integer(i4)                               :: n1, n2    ! dim2 of matrixes
     integer(i8), dimension(:,:), allocatable  :: tmp
 
     m2 = size(vec2,1)   ! rows
@@ -999,7 +1146,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -1008,9 +1155,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(1:m2,n1+n2)      = vec2(1:m2)
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(1:m1,1:n1)       = tmp(:,1:n1)
+          mat1(1:m2,n1+n2)      = vec2(1:m2)
+       end if
+       
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+          mat1(m2+1:m1,n1+n2)   = fill_value
+       end if
+
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(m1+1:m2,1:n1)    = fill_value
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+       end if
+
     else
        n1 = 0_i4
        m1 = m2
@@ -1021,12 +1185,13 @@ CONTAINS
 
   END SUBROUTINE paste_i8_m_v
 
-  SUBROUTINE paste_i8_m_m(mat1, mat2)
+  SUBROUTINE paste_i8_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     integer(i8), dimension(:,:), allocatable, intent(inout)   :: mat1
     integer(i8), dimension(:,:),              intent(in)      :: mat2
+    integer(i8), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                             :: m1, m2    ! dim1 of matrixes
@@ -1039,7 +1204,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -1048,10 +1213,27 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
-    else
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(:,1:n1)          = tmp(:,1:n1)
+          mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(    :  ,1:n1)          = tmp(:,1:n1)
+          mat1(   1:m2,n1+1_i4:n1+n2) = mat2(:,1:n2)
+          mat1(m2+1:m1,n1+1_i4:n1+n2) = fill_value
+       end if
+       
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,      1:n1   ) = tmp(:,1:n1)
+          mat1(m1+1:m2,      1:n1   ) = fill_value
+          mat1(    :  ,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+          
+   else
        n1 = 0_i4
        m1 = m2
 
@@ -1095,12 +1277,13 @@ CONTAINS
 
   END SUBROUTINE paste_sp_m_s
 
-  SUBROUTINE paste_sp_m_v(mat1, vec2)
+  SUBROUTINE paste_sp_m_v(mat1, vec2, fill_value)
 
     implicit none
 
     real(sp), dimension(:,:), allocatable, intent(inout)   :: mat1
     real(sp), dimension(:),                intent(in)      :: vec2
+    real(sp), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                             :: m1, m2    ! dim1 of matrixes
@@ -1113,7 +1296,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -1122,9 +1305,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(1:m2,n1+n2)      = vec2(1:m2)
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(1:m1,1:n1)       = tmp(:,1:n1)
+          mat1(1:m2,n1+n2)      = vec2(1:m2)
+       end if
+       
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+          mat1(m2+1:m1,n1+n2)   = fill_value
+       end if
+
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(m1+1:m2,1:n1)    = fill_value
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+       end if
+
     else
        n1 = 0_i4
        m1 = m2
@@ -1135,12 +1335,13 @@ CONTAINS
 
   END SUBROUTINE paste_sp_m_v
 
-  SUBROUTINE paste_sp_m_m(mat1, mat2)
+  SUBROUTINE paste_sp_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     real(sp), dimension(:,:), allocatable, intent(inout)   :: mat1
     real(sp), dimension(:,:),              intent(in)      :: mat2
+    real(sp), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                             :: m1, m2    ! dim1 of matrixes
@@ -1153,7 +1354,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -1162,9 +1363,27 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(:,1:n1)          = tmp(:,1:n1)
+          mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(    :  ,1:n1)          = tmp(:,1:n1)
+          mat1(   1:m2,n1+1_i4:n1+n2) = mat2(:,1:n2)
+          mat1(m2+1:m1,n1+1_i4:n1+n2) = fill_value
+       end if
+       
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,      1:n1   ) = tmp(:,1:n1)
+          mat1(m1+1:m2,      1:n1   ) = fill_value
+          mat1(    :  ,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+
+
     else
        n1 = 0_i4
        m1 = m2
@@ -1209,12 +1428,13 @@ CONTAINS
 
   END SUBROUTINE paste_dp_m_s
 
-  SUBROUTINE paste_dp_m_v(mat1, vec2)
+  SUBROUTINE paste_dp_m_v(mat1, vec2, fill_value)
 
     implicit none
 
     real(dp), dimension(:,:), allocatable, intent(inout)   :: mat1
     real(dp), dimension(:),                intent(in)      :: vec2
+    real(dp), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                             :: m1, m2    ! dim1 of matrixes
@@ -1227,7 +1447,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -1236,9 +1456,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(1:m2,n1+n2)      = vec2(1:m2)
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(1:m1,1:n1)       = tmp(:,1:n1)
+          mat1(1:m2,n1+n2)      = vec2(1:m2)
+       end if
+       
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+          mat1(m2+1:m1,n1+n2)   = fill_value
+       end if
+
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(m1+1:m2,1:n1)    = fill_value
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+       end if
+
     else
        n1 = 0_i4
        m1 = m2
@@ -1249,12 +1486,13 @@ CONTAINS
 
   END SUBROUTINE paste_dp_m_v
 
-  SUBROUTINE paste_dp_m_m(mat1, mat2)
+  SUBROUTINE paste_dp_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     real(dp), dimension(:,:), allocatable, intent(inout)   :: mat1
     real(dp), dimension(:,:),              intent(in)      :: mat2
+    real(dp), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                             :: m1, m2    ! dim1 of matrixes
@@ -1267,7 +1505,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -1276,9 +1514,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(:,1:n1)          = tmp(:,1:n1)
+          mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(    :  ,1:n1)          = tmp(:,1:n1)
+          mat1(   1:m2,n1+1_i4:n1+n2) = mat2(:,1:n2)
+          mat1(m2+1:m1,n1+1_i4:n1+n2) = fill_value
+       end if
+       
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,      1:n1   ) = tmp(:,1:n1)
+          mat1(m1+1:m2,      1:n1   ) = fill_value
+          mat1(    :  ,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+
     else
        n1 = 0_i4
        m1 = m2
@@ -1323,12 +1578,13 @@ CONTAINS
 
   END SUBROUTINE paste_char_m_s
 
-  SUBROUTINE paste_char_m_v(mat1, vec2)
+  SUBROUTINE paste_char_m_v(mat1, vec2, fill_value)
 
     implicit none
 
     character(len=*), dimension(:,:), allocatable, intent(inout)   :: mat1
     character(len=*), dimension(:),                intent(in)      :: vec2
+    character(len=*), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                                  :: m1, m2    ! dim1 of matrixes
@@ -1341,7 +1597,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -1350,9 +1606,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(1:m2,n1+n2)      = vec2(1:m2)
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(1:m1,1:n1)       = tmp(:,1:n1)
+          mat1(1:m2,n1+n2)      = vec2(1:m2)
+       end if
+       
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+          mat1(m2+1:m1,n1+n2)   = fill_value
+       end if
+
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,1:n1)    = tmp(:,1:n1)
+          mat1(m1+1:m2,1:n1)    = fill_value
+          mat1(   1:m2,n1+n2)   = vec2(1:m2)
+       end if
+
     else
        n1 = 0_i4
        m1 = m2
@@ -1363,12 +1636,13 @@ CONTAINS
 
   END SUBROUTINE paste_char_m_v
 
-  SUBROUTINE paste_char_m_m(mat1, mat2)
+  SUBROUTINE paste_char_m_m(mat1, mat2, fill_value)
 
     implicit none
 
     character(len=*), dimension(:,:), allocatable, intent(inout)   :: mat1
     character(len=*), dimension(:,:),              intent(in)      :: mat2
+    character(len=*), optional,                    intent(in)      :: fill_value
 
     ! local variables
     integer(i4)                                  :: m1, m2    ! dim1 of matrixes
@@ -1381,7 +1655,7 @@ CONTAINS
     if (allocated(mat1)) then
        m1 = size(mat1,1)   ! rows
        n1 = size(mat1,2)   ! columns
-       if (m1 .ne. m2) then
+       if ( (m1 .ne. m2) .and. .not. present( fill_value ) ) then
           print*, 'paste: rows of matrix1 and matrix2 are unequal : (',m1,',',n1,')  and  (',m2,',',n2,')'
           STOP
        end if
@@ -1390,9 +1664,26 @@ CONTAINS
        tmp=mat1
        deallocate(mat1)
 
-       allocate(mat1(m1,n1+n2))
-       mat1(:,1:n1)          = tmp(:,1:n1)
-       mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       if ( m1 .eq. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(:,1:n1)          = tmp(:,1:n1)
+          mat1(:,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+
+       if ( m1 .gt. m2 ) then
+          allocate(mat1(m1,n1+n2))
+          mat1(    :  ,1:n1)          = tmp(:,1:n1)
+          mat1(   1:m2,n1+1_i4:n1+n2) = mat2(:,1:n2)
+          mat1(m2+1:m1,n1+1_i4:n1+n2) = fill_value
+       end if
+       
+       if ( m1 .lt. m2 ) then
+          allocate(mat1(m2,n1+n2))
+          mat1(   1:m1,      1:n1   ) = tmp(:,1:n1)
+          mat1(m1+1:m2,      1:n1   ) = fill_value
+          mat1(    :  ,n1+1_i4:n1+n2) = mat2(:,1:n2)
+       end if
+
     else
        n1 = 0_i4
        m1 = m2

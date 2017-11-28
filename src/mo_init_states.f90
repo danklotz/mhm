@@ -81,8 +81,9 @@ CONTAINS
 
     use mo_global_variables, only: processMatrix, nSoilHorizons_mHM,            &
          L1_fSealed, L1_fForest, L1_fPerm, L1_inter, L1_snowPack, L1_sealSTW,   &  
-         L1_soilMoist, L1_unsatSTW, L1_satSTW, L1_aETSoil, L1_aETCanopy,        &
-         L1_aETSealed, L1_baseflow, L1_infilSoil, L1_fastRunoff, L1_melt,       &        
+         L1_soilMoist, L1_unsatSTW, L1_satSTW,                                  &
+         L1_pet_calc, L1_aETSoil, L1_aETCanopy, L1_aETSealed,                   &
+         L1_baseflow, L1_infilSoil, L1_fastRunoff, L1_melt,                     &        
          L1_percol, L1_preEffect, L1_rain, L1_runoffSeal, L1_slowRunoff,        &   
          L1_snow, L1_Throughfall, L1_total_runoff, L1_alpha, L1_degDayInc,      & 
          L1_degDayMax, L1_degDayNoPre, L1_degDay, L1_karstLoss, L1_fAsp,        &
@@ -91,7 +92,7 @@ CONTAINS
          L1_kPerco, L1_soilMoistFC, L1_soilMoistSat, L1_soilMoistExp,           &
          L1_tempThresh, L1_unsatThresh, L1_sealedThresh, L1_wiltingPoint,       &
          L11_Qmod, L11_qOUT, L11_qTIN,  L11_qTR, L11_K, L11_xi,L11_C1, L11_C2,  &
-         L11_FracFPimp
+         L11_FracFPimp, L1_neutrons
 
     use mo_mhm_constants,    only: nRoutingStates, YearMonths_i4    
     use mo_append,           only: append                      ! append vector
@@ -153,11 +154,19 @@ CONTAINS
     ! groundwater storage
     dummy_Vector(:) = 0.0_dp
     call append( L1_satSTW,  dummy_Vector )
+    
+    ! ground albedo neutrons
+    dummy_Vector(:) = 0.0_dp
+    call append( L1_neutrons,  dummy_Vector )
 
     !-------------------------------------------
     ! FLUXES
     !-------------------------------------------
 
+    ! calculated / corrected potential evapotranspiration
+    dummy_Vector(:) = 0.0_dp
+    call append( L1_pet_calc,  dummy_Vector )
+    
     !  soil actual ET
     dummy_Matrix(:,:) = 0.0_dp
     call append( L1_aETSoil,  dummy_Matrix )
@@ -434,8 +443,9 @@ CONTAINS
     use mo_global_variables, only:                                              &
          nSoilHorizons_mHM, HorizonDepth_mHM,                                   &
          L1_fSealed, L1_fForest, L1_fPerm, L1_inter, L1_snowPack, L1_sealSTW,   &  
-         L1_soilMoist, L1_unsatSTW, L1_satSTW, L1_aETSoil, L1_aETCanopy,        &
-         L1_aETSealed, L1_baseflow, L1_infilSoil, L1_fastRunoff, L1_melt,       &        
+         L1_soilMoist, L1_unsatSTW, L1_satSTW,                                  &
+         L1_pet_calc, L1_aETSoil, L1_aETCanopy, L1_aETSealed,                   &
+         L1_baseflow, L1_infilSoil, L1_fastRunoff, L1_melt,                     &
          L1_percol, L1_preEffect, L1_rain, L1_runoffSeal, L1_slowRunoff,        &   
          L1_snow, L1_Throughfall, L1_total_runoff, L1_alpha, L1_degDayInc,      & 
          L1_degDayMax, L1_degDayNoPre, L1_degDay, L1_karstLoss, L1_fAsp,        &         
@@ -444,7 +454,7 @@ CONTAINS
          L1_kPerco, L1_soilMoistFC, L1_soilMoistSat, L1_soilMoistExp,           &
          L1_tempThresh, L1_unsatThresh, L1_sealedThresh, L1_wiltingPoint,       &
          L11_Qmod, L11_qOUT, L11_qTIN,  L11_qTR, L11_K, L11_xi,L11_C1, L11_C2,  &
-         L11_FracFPimp
+         L11_FracFPimp, L1_neutrons
 
     use mo_mhm_constants,    only:               &
          P1_InitStateFluxes, P2_InitStateFluxes, &
@@ -491,11 +501,17 @@ CONTAINS
 
     ! groundwater storage
     L1_satSTW = P4_InitStateFluxes
+    
+    ! ground albedo neutrons, initially zero
+    L1_neutrons = P1_InitStateFluxes
 
     !-------------------------------------------
     ! FLUXES
     !-------------------------------------------
 
+    ! corrected / calculated potential ET
+    L1_pet_calc = P1_InitStateFluxes
+    
     !  soil actual ET
     L1_aETSoil = P1_InitStateFluxes
 
@@ -835,8 +851,8 @@ CONTAINS
   !         None
 
   !     INTENT(OUT)
-  !>        \param[out] "integer(i4)             :: nrowsOut"	      no. of rows at an output level
-  !>        \param[out] "integer(i4)             :: ncolsOut"	      no. of cols at an output level
+  !>        \param[out] "integer(i4)             :: nrowsOut"         no. of rows at an output level
+  !>        \param[out] "integer(i4)             :: ncolsOut"         no. of cols at an output level
   !>        \param[out] "real(dp)                :: xllcornerOut"      xllcorner at an output level
   !>        \param[out] "real(dp)                :: yllcornerOut"      yllcorner at an output level
   !>        \param[out] "real(dp)                :: cellsizeOut"       cell size at an output level

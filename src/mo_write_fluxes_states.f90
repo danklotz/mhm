@@ -48,6 +48,7 @@ CONTAINS
   !>         \param[inout] "real(dp), allocatable :: L1_sealSTW_out(:)"      ! Retention storage of impervious areas
   !>         \param[inout] "real(dp), allocatable :: L1_unsatSTW_out(:)"     ! Upper soil storage
   !>         \param[inout] "real(dp), allocatable :: L1_satSTW_out(:)"       ! Groundwater storage
+  !>         \param[inout] "real(dp), allocatable :: L1_neutrons_out(:)"     ! ground albedo neutrons
   !>         \param[inout] "real(dp), allocatable :: L1_pet_out(:)"          ! potential evapotranspiration (PET) 
   !>         \param[inout] "real(dp), allocatable :: L1_aETSoil_out(:,:)"    ! actual ET of each horizon
   !>         \param[inout] "real(dp), allocatable :: L1_aETCanopy_out(:)"    ! Real evaporation intensity from canopy
@@ -103,6 +104,7 @@ CONTAINS
        L1_sealSTW_out         , & ! Retention storage of impervious areas
        L1_unsatSTW_out        , & ! Upper soil storage
        L1_satSTW_out          , & ! Groundwater storage
+       L1_neutrons_out        , & ! Ground albedo neutrons
        ! Inout: Fluxes L1
        L1_pet_out             , & ! potential evapotranspiration (PET)
        L1_aETSoil_out         , & ! actual ET
@@ -153,6 +155,7 @@ CONTAINS
     real(dp), dimension(:),   allocatable, intent(inout) :: L1_sealSTW_out      ! Retention storage of impervious areas
     real(dp), dimension(:),   allocatable, intent(inout) :: L1_unsatSTW_out     ! Upper soil storage
     real(dp), dimension(:),   allocatable, intent(inout) :: L1_satSTW_out       ! Groundwater storage
+    real(dp), dimension(:),   allocatable, intent(inout) :: L1_neutrons_out     ! ground albedo neutrons
     ! Fluxes L1
     real(dp), dimension(:),   allocatable, intent(inout) :: L1_pet_out          ! potential evapotranspiration (PET)
     real(dp), dimension(:,:), allocatable, intent(inout) :: L1_aETSoil_out      ! actual ET of each horizon
@@ -194,7 +197,7 @@ CONTAINS
     ! determine total number of variables to print
     totalVarNo = count(outputFlxState)
     
-    ! output for soil every layer > increases number of output parameters
+    ! output for soil, every layer increases number of output parameters
     if (outputFlxState(3))  totalVarNo = totalVarNo + nSoilHorizons_mHM - 1
     if (outputFlxState(4))  totalVarNo = totalVarNo + nSoilHorizons_mHM - 1
     if (outputFlxState(17)) totalVarNo = totalVarNo + nSoilHorizons_mHM - 1 
@@ -317,11 +320,25 @@ CONTAINS
        V(VarNo+5)%att(2)%values = "water level in groundwater reservoir"
        VarNo = VarNo + 1
     end if
+    
+    if (outputFlxState(18)) then
+
+       allocate( L1_neutrons_out(nCells) )
+       L1_neutrons_out = 0.0_dp
+
+       ! name
+       V(VarNo+5)%name          = "Neutrons"
+       ! unit
+       V(VarNo+5)%att(1)%values = "cph"
+       ! long_name
+       V(VarNo+5)%att(2)%values = "ground albedo neutrons"
+       VarNo = VarNo + 1
+    end if
 
     ! ---------
     ! 2. Fluxes
     ! ---------
-    nTimeSteps = ( simPer%julEnd - simPer%julStart + 1 ) * NTSTEPDAY
+    nTimeSteps = ( simPer(iBasin)%julEnd - simPer(iBasin)%julStart + 1 ) * NTSTEPDAY
     if (output_timeStep > 0) then
        if ( (timestep*output_timeStep)     .EQ. 1 ) then
           unit = 'mm h-1'
@@ -512,7 +529,7 @@ CONTAINS
     ! set unit for dimension time 
     ! (e.g. hours since 2008-01-01 00:00:00)
     !*******************************************************
-    jday_frac = real( (evalPer%julStart), dp )
+    jday_frac = real( (evalPer(iBasin)%julStart), dp )
     call dec2date(jday_frac, dd=day, mm=month, yy=year)
     write(dummy,"('hours since ', i4, '-' ,i2.2, '-', i2.2, 1x, '00:00:00')") year, month, day
     V(3)%att(1)%values = trim(dummy)
@@ -578,6 +595,7 @@ CONTAINS
   !>         \param[in] "real(dp), allocatable    :: L1_sealSTW_out(:)"      ! Retention storage of impervious areas
   !>         \param[in] "real(dp), allocatable    :: L1_unsatSTW_out(:)"     ! Upper soil storage
   !>         \param[in] "real(dp), allocatable    :: L1_satSTW_out(:)"       ! Groundwater storage
+  !>         \param[in] "real(dp), allocatable    :: L1_neutrons_out(:)"     ! Ground albedo neutrons
   !>         \param[in] "real(dp), allocatable    :: L1_pet_out(:)"          ! potential evapotranspiration (PET) 
   !>         \param[in] "real(dp), allocatable    :: L1_aETSoil_out(:,:)"    ! actual ET of each horizon
   !>         \param[in] "real(dp), allocatable    :: L1_aETCanopy_out(:)"    ! Real evaporation intensity from canopy
@@ -640,6 +658,7 @@ CONTAINS
        L1_sealSTW_out      , & ! Retention storage of impervious areas
        L1_unsatSTW_out     , & ! Upper soil storage
        L1_satSTW_out       , & ! Groundwater storage
+       L1_neutrons_out     , & ! Ground albedo neutrons
        ! input: Fluxes L1
        L1_pet_out             , & ! potential evapotranspiration (PET)
        L1_aETSoil_out      , & ! actual ET
@@ -682,6 +701,7 @@ CONTAINS
     real(dp), dimension(:),   allocatable, intent(in)    :: L1_sealSTW_out      ! Retention storage of impervious areas
     real(dp), dimension(:),   allocatable, intent(in)    :: L1_unsatSTW_out     ! Upper soil storage
     real(dp), dimension(:),   allocatable, intent(in)    :: L1_satSTW_out       ! Groundwater storage
+    real(dp), dimension(:),   allocatable, intent(in)    :: L1_neutrons_out     ! Ground albedo neutrons
     ! Fluxes L1
     real(dp), dimension(:),   allocatable, intent(in)    :: L1_pet_out          ! potential evapotranspiration (PET)
     real(dp), dimension(:,:), allocatable, intent(in)    :: L1_aETSoil_out      ! actual ET of each horizon
@@ -791,6 +811,14 @@ CONTAINS
     if (outputFlxState(8)) then
 
        OutPut(:,:,VarNo)  = unpack(L1_satSTW_out(:), mask, nodata_dp)
+
+       V(VarNo+5)%G2_d =>  OutPut(:,:,VarNo)
+       VarNo = VarNo + 1
+    end if
+    !
+    if (outputFlxState(18)) then
+
+       OutPut(:,:,VarNo)  = unpack(L1_neutrons_out(:), mask, nodata_dp)
 
        V(VarNo+5)%G2_d =>  OutPut(:,:,VarNo)
        VarNo = VarNo + 1

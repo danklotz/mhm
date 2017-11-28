@@ -2,19 +2,19 @@
 ! --------------------------------------------------------------------------
 !> \authors   Luis Samaniego & Rohini Kumar (UFZ)
 !  CONTACT    luis.samaniego@ufz.de / rohini.kumar@ufz.de
-!> \version   5.0
-!> \date      Dec 2012
+!> \version   5.3
+!> \date      Jun 2015
 
 !  PURPOSE
 !>            \brief Distributed precipitation-runoff model mHM
 
 !>            \details This is the main driver of mHM, which calls
-!>             one instance of mHM for a single basin and a given period.
+!>             one instance of mHM for a multiple basins and a given period.
 
 !>              \image html  mhm5-logo.png "Typical mHM cell"
 !>              \image latex mhm5-logo.pdf "Typical mHM cell" width=10cm
 
-!>  \copyright (c)2005-2014, Helmholtz-Zentrum fuer Umweltforschung GmbH - UFZ.
+!>  \copyright (c)2005-2015, Helmholtz-Zentrum fuer Umweltforschung GmbH - UFZ.
 !>             All rights reserved.
 !>
 !>             This code is a property of:
@@ -135,6 +135,7 @@
 !                                                on a regular X-Y coordinate system
 !                      Stephan Thober May 2014 - moved read meteo forcings to mo_mhm_eval
 !       Matthias Cuntz & Juliane Mai, Nov 2014 - LAI input from daily, monthly or yearly files
+!                      Matthias Zink, Mar 2015 - added optional soil mositure read in for calibration
 !
 ! --------------------------------------------------------------------------
 
@@ -143,7 +144,7 @@ PROGRAM mhm_driver
   USE mo_anneal,              ONLY : anneal                         ! Optimise with Simulated Annealing SA
   USE mo_dds,                 ONLY : dds                            ! Optimise with Dynam. Dimens. Search DDS
   USE mo_file,                ONLY :                         &
-       version, file_main,                                   &      ! main info
+       version, version_date, file_main,                     &      ! main info
        file_namelist,                                        &      ! filename of namelist: main setup
        file_namelist_param,                                  &      ! filename of namelist: mhm model parameter
        file_defOutput                                               ! filename of namelist: output setup
@@ -169,12 +170,13 @@ PROGRAM mhm_driver
        basin, processMatrix                                         ! basin information,  processMatrix
   USE mo_global_variables, ONLY: opti_function
   USE mo_kind,                ONLY : i4, i8, dp                     ! number precision
-  USE mo_mcmc,                ONLY : mcmc                           ! Monte Carlo Markov Chain method
+  USE mo_mcmc,                ONLY : mcmc_stddev                    ! Monte Carlo Markov Chain method
   USE mo_message,             ONLY : message, message_text          ! For print out
   USE mo_meteo_forcings,      ONLY : prepare_meteo_forcings_data
   USE mo_mhm_eval,            ONLY : mhm_eval
   USE mo_objective_function,  ONLY : objective, loglikelihood       ! objective functions and likelihoods
   USE mo_prepare_gridded_LAI, ONLY : prepare_gridded_daily_LAI_data ! prepare daily LAI gridded fields
+  USE mo_read_optional_data,  ONLY : read_soil_moisture             ! optional soil moisture reader
   USE mo_read_config,         ONLY : read_config                    ! Read main configuration files
   USE mo_read_wrapper,        ONLY : read_data                      ! Read all input data
   USE mo_read_latlon,         ONLY : read_latlon
@@ -193,19 +195,19 @@ PROGRAM mhm_driver
   IMPLICIT NONE
 
   ! local
-  integer, dimension(8)                 :: datetime        ! Date and time
-  !$ integer(i4)                        :: n_threads       ! OpenMP number of parallel threads
+  integer, dimension(8)                 :: datetime         ! Date and time
+  !$ integer(i4)                        :: n_threads        ! OpenMP number of parallel threads
   integer(i4)                           :: ii, jj           ! Counters
-  integer(i4)                           :: iTimer          ! Current timer number
+  integer(i4)                           :: iTimer           ! Current timer number
   integer(i4)                           :: nTimeSteps
-  real(dp)                              :: funcbest        ! best objective function achivied during optimization
+  real(dp)                              :: funcbest         ! best objective function achivied during optimization
   ! model output
-  real(dp), allocatable, dimension(:,:) :: riverrun        ! simulated river runoff at all gauges, timepoints
+  real(dp), allocatable, dimension(:,:) :: riverrun         ! simulated river runoff at all gauges, timepoints
   ! mcmc
-  real(dp), dimension(:,:), allocatable :: burnin_paras    ! parameter sets sampled during burnin
-  real(dp), dimension(:,:), allocatable :: mcmc_paras      ! parameter sets sampled during proper mcmc
-  logical,  dimension(:),   allocatable :: maskpara        ! true  = parameter will be optimized     = parameter(i,4) = 1
-  !                                                        ! false = parameter will not be optimized = parameter(i,4) = 0
+  real(dp), dimension(:,:), allocatable :: burnin_paras     ! parameter sets sampled during burnin
+  real(dp), dimension(:,:), allocatable :: mcmc_paras       ! parameter sets sampled during proper mcmc
+  logical,  dimension(:),   allocatable :: maskpara         ! true  = parameter will be optimized     = parameter(i,4) = 1
+  !                                                         ! false = parameter will not be optimized = parameter(i,4) = 0
   integer(i4)                           :: npara
   real(dp), dimension(:,:), allocatable :: local_parameters ! global_parameters but includes a and b for likelihood
   logical,  dimension(:),   allocatable :: local_maskpara   ! maskpara but includes a and b for likelihood
@@ -217,9 +219,11 @@ PROGRAM mhm_driver
   call message('              mHM-UFZ')
   call message()
   call message('    MULTISCALE HYDROLOGIC MODEL')
-  call message('           Revision ', trim(version))
+  call message('           Version ', trim(version))
+  call message('           ', trim(version_date))
+  call message()
   call message('Originally by L. Samaniego & R. Kumar')
-  call message('          June 2014')
+  
   call message(separator)
 
   call message()
@@ -246,11 +250,12 @@ PROGRAM mhm_driver
   call read_config()
 
   call message()
+  call message('  # of basins:         ', trim(num2str(nbasins)))
+  call message()
   call message('  Input data directories:')
-  call message('    # of basins  :          ', trim(num2str(nbasins)))
   do ii = 1, nbasins
      call message( '  --------------' )
-     call message( '      BASIN                    ', num2str(ii,'(I3)') )
+     call message( '      BASIN                   ', num2str(ii,'(I3)') )
      call message( '  --------------' )
      call message('    Morphological directory:    ',   trim(dirMorpho(ii) ))
      call message('    Land cover directory:       ',   trim(dirLCover(ii) ))
@@ -259,16 +264,16 @@ PROGRAM mhm_driver
      call message('    Temperature directory:      ',   trim(dirTemperature(ii)  ))
      select case (processMatrix(5,1))
      case(0)
-       call message('    PET directory:              ', trim(dirReferenceET(ii)  )) 
+        call message('    PET directory:              ', trim(dirReferenceET(ii)  )) 
      case(1)
-       call message('    Min. temperature directory: ', trim(dirMinTemperature(ii)  )) 
-       call message('    Max. temperature directory: ', trim(dirMaxTemperature(ii)  )) 
+        call message('    Min. temperature directory: ', trim(dirMinTemperature(ii)  )) 
+        call message('    Max. temperature directory: ', trim(dirMaxTemperature(ii)  )) 
      case(2)
-       call message('    Net radiation directory:    ', trim(dirNetRadiation(ii) ))
+        call message('    Net radiation directory:    ', trim(dirNetRadiation(ii) ))
      case(3)
-       call message('    Net radiation directory:    ', trim(dirNetRadiation(ii) ))
-       call message('    Abs. vap. press. directory: ', trim(dirabsVapPressure(ii)  )) 
-       call message('    Windspeed directory:        ', trim(dirwindspeed(ii)  )) 
+        call message('    Net radiation directory:    ', trim(dirNetRadiation(ii) ))
+        call message('    Abs. vap. press. directory: ', trim(dirabsVapPressure(ii)  )) 
+        call message('    Windspeed directory:        ', trim(dirwindspeed(ii)  )) 
      end select
      call message('    Output directory:           ',   trim(dirOut(ii) ))
      if (timeStep_LAI_input < 0) then
@@ -276,9 +281,9 @@ PROGRAM mhm_driver
      end if
 
      if (processMatrix(8,1) .GT. 0) then
-        call message('    Evaluation gauge          ', 'ID')
+        call message('    Evaluation gauge            ', 'ID')
         do jj = 1 , basin%nGauges(ii)
-           call message('    ',trim(adjustl(num2str(jj))),'                         ', &
+           call message('    ',trim(adjustl(num2str(jj))),'                           ', &
                 trim(adjustl(num2str(basin%gaugeIdList(ii,jj)))))
         end do
      end if
@@ -320,11 +325,11 @@ PROGRAM mhm_driver
 
      ! read meteorology now, if optimization is switched on
      ! meteorological forcings (reading, upscaling or downscaling)
-     if ( timestep_model_inputs .eq. 0_i4 ) then
+     if ( timestep_model_inputs(ii) .eq. 0_i4 ) then
         call prepare_meteo_forcings_data(ii, 1)
      end if
 
-    ! read lat lon coordinates of each basin
+     ! read lat lon coordinates of each basin
      call message('  Reading lat-lon for basin: ', trim(adjustl(num2str(ii))),' ...')
      call timer_start(itimer)
      call read_latlon(ii)
@@ -338,6 +343,12 @@ PROGRAM mhm_driver
         call prepare_gridded_daily_LAI_data(ii)
         call timer_stop(itimer)
         call message('    in ', trim(num2str(timer_get(itimer),'(F9.3)')), ' seconds.')
+     endif
+
+     ! read optional optional data
+     ! e.g. for optimization against soil mopisture, soil moisture is read
+     if ((opti_function .GE. 10) .AND. (opti_function .LE. 13) .AND. optimize) then
+        call read_soil_moisture(ii)
      endif
 
   end do
@@ -408,13 +419,13 @@ PROGRAM mhm_driver
 
         if (seed .gt. 0_i8) then
            ! use fixed user-defined seed
-           call mcmc(loglikelihood, local_parameters(:,3), local_parameters(:,1:2), mcmc_paras, burnin_paras, &
+           call mcmc_stddev(loglikelihood, local_parameters(:,3), local_parameters(:,1:2), mcmc_paras, burnin_paras, &
                 ParaSelectMode_in=2_i4,tmp_file='mcmc_tmp_parasets.nc',                                         &
                 maskpara_in=local_maskpara,                                                                           &
                 seed_in=seed, loglike_in=.true., printflag_in=.true.)
         else
            ! use flexible clock-time seed
-           call mcmc(loglikelihood, local_parameters(:,3), local_parameters(:,1:2), mcmc_paras, burnin_paras, &
+           call mcmc_stddev(loglikelihood, local_parameters(:,3), local_parameters(:,1:2), mcmc_paras, burnin_paras, &
                 ParaSelectMode_in=2_i4,tmp_file='mcmc_tmp_parasets.nc',                                         &
                 maskpara_in=local_maskpara,                                                                           &
                 loglike_in=.true., printflag_in=.true.)
@@ -497,29 +508,29 @@ PROGRAM mhm_driver
      deallocate(local_maskpara)
 
   else
-    ! --------------------------------------------------------------------------
-    ! call mHM
-    ! get runoff timeseries if possible (i.e. when processMatrix(8,1) > 0)
-    ! get other model outputs  (i.e. gridded fields of model output)
-    ! --------------------------------------------------------------------------
-    call message('  Run mHM')
-    call timer_start(iTimer)
-    if ( processMatrix(8,1) .eq. 0 ) then
-       ! call mhm without routing
-       call mhm_eval(global_parameters(:,3))
-    else
-       ! call mhm with routing
-       call mhm_eval(global_parameters(:,3), runoff=riverrun)
-    end if
-    call timer_stop(itimer)
-    call message('    in ', trim(num2str(timer_get(itimer),'(F12.3)')), ' seconds.')
-    !
+     ! --------------------------------------------------------------------------
+     ! call mHM
+     ! get runoff timeseries if possible (i.e. when processMatrix(8,1) > 0)
+     ! get other model outputs  (i.e. gridded fields of model output)
+     ! --------------------------------------------------------------------------
+     call message('  Run mHM')
+     call timer_start(iTimer)
+     if ( processMatrix(8,1) .eq. 0 ) then
+        ! call mhm without routing
+        call mhm_eval(global_parameters(:,3))
+     else
+        ! call mhm with routing
+        call mhm_eval(global_parameters(:,3), runoff=riverrun)
+     end if
+     call timer_stop(itimer)
+     call message('    in ', trim(num2str(timer_get(itimer),'(F12.3)')), ' seconds.')
+     !
   end if
 
   ! --------------------------------------------------------------------------
   ! WRITE RESTART files
   ! --------------------------------------------------------------------------
-  if ( write_restart ) then
+  if ( write_restart  .AND. (.NOT. optimize)) then
      itimer = itimer + 1
      call message()
      call message( '  Write restart file')
@@ -534,14 +545,14 @@ PROGRAM mhm_driver
   ! FINISH UP
   ! --------------------------------------------------------------------------
   itimer = itimer + 1
- ! call message()
- ! call message('  Write ouput data')
- ! call timer_start(itimer)
- ! ! call write_data()
- ! call timer_stop(itimer)
- ! call message('    in ', trim(num2str(timer_get(itimer),'(F9.3)')), ' seconds.')
+  ! call message()
+  ! call message('  Write ouput data')
+  ! call timer_start(itimer)
+  ! ! call write_data()
+  ! call timer_stop(itimer)
+  ! call message('    in ', trim(num2str(timer_get(itimer),'(F9.3)')), ' seconds.')
 
-  nTimeSteps = ( simPer%julEnd - simPer%julStart + 1 ) * NTSTEPDAY
+  nTimeSteps = maxval( simPer(1:nBasins)%julEnd - simPer(1:nBasins)%julStart + 1 ) * NTSTEPDAY
   call date_and_time(values=datetime)
   call message()
   message_text = 'Done '//trim(num2str(nTimeSteps,'(I10)'))//" time steps."

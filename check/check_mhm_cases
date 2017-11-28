@@ -72,87 +72,8 @@ set -e
 # by using the optional arguments of check_mhm_cases, i.e. "-c", "-r", "-s".
 
 # All tests will be performed first in sequential mode and repeated with
-# openmp parallelization. The test cases specified so far are:
-
-#    case 0 :: DEFAULT
-
-#    case 1 :: RESTART READING AND WRITING
-#       restart_flag_states_read   = .TRUE.          (default: .FALSE.)
-#       restart_flag_states_write  = .TRUE.          (default: .TRUE. )
-#       restart_flag_config_read   = .TRUE.          (default: .FALSE.)
-#       restart_flag_config_write  = .TRUE.          (default: .TRUE. )
-
-#    case 2 :: ROUTING DEACTIVATED
-#       processCase(8) = 0                           (default: 1)
-
-#    case 3 :: OPTIMIZATION ACTIVATED
-#       optimize       = .TRUE.                      (default: .FALSE.)
-#       opti_method    = 1                           (default: 3      )
-#       nIterations    = 6                           (default: 400    )
-
-#    case 4 :: MULTISCALE  
-#       nBasins                    = 6	             (default: nBasins                 = 2)
-#       resolution_Hydrology(1)    = 24000 	     (default: resolution_Hydrology(1) = 24000 )
-#       resolution_Hydrology(2)    = 12000	     (default: resolution_Hydrology(1) = 24000 )
-#       resolution_Hydrology(3)    = 24000 	     (default: )
-#       resolution_Hydrology(4)    = 24000	     (default: )
-#       resolution_Hydrology(5)    = 12000 	     (default: )
-#       resolution_Hydrology(6)    = 24000	     (default: )
-#       resolution_Routing(1)      = 24000 	     (default: resolution_Routing(1)   = 24000)
-#       resolution_Routing(2)      = 12000	     (default: resolution_Routing(2)   = 24000)
-#       resolution_Routing(3)      = 24000	     (default: )
-#       resolution_Routing(4)      = 24000	     (default: )
-#       resolution_Routing(5)      = 12000	     (default: )
-#       resolution_Routing(6)      = 24000	     (default: )
-#       L0Basin(1)                 = 1	             (default: )
-#       L0Basin(2)                 = 1	             (default: )
-#       L0Basin(3)                 = 2	             (default: )
-#       L0Basin(4)                 = 3	             (default: )
-#       L0Basin(5)                 = 4	             (default: )
-#       L0Basin(6)                 = 5	             (default: )
-#       nGaugesTotal               = 6	             (default: nGaugesTotal            = 2)
-#       NoGauges_basin(3)          = 1 	             (default: )
-#       Gauge_id(3,1)              = 45 	     (default: )
-#       Gauge_filename(3,1)        = "45.txt"        (default: )
-#       NoGauges_basin(4)          = 1	             (default: )
-#       Gauge_id(4,1)              = 398 	     (default: )
-#       Gauge_filename(4,1)        = "00398.txt"     (default: )
-#       NoGauges_basin(5)          = 1	             (default: )
-#       Gauge_id(5,1)              = 398 	     (default: )
-#       Gauge_filename(5,1)        = "00398.txt"     (default: )
-#       NoGauges_basin(6)          = 1	             (default: )
-#       Gauge_id(6,1)              = 45 	     (default: )
-#       Gauge_filename(6,1)        = "45.txt"        (default: )
-#       + adjust basin wise directory paths according to the multiscale setup:
-#       dir_Out(1)          	   = "output_b1/b1_" (default: "output_b1/")
-#       dir_RestartOut(1)          = "output_b1/b1_" (default: "output_b1/")
-#       dir_LatLon(2)              = "../../test_basin/input/latlon/latlon_2.nc" (default: latlon_1.nc )
-#       dir_Out(2)                 = "output_b1/b2_" (default: "output_b1/")
-#       dir_RestartOut(2)          = "output_b1/b2_" (default: "output_b1/")
-#       dir_LatLon(3)              = "../../test_basin_2/input/latlon/latlon.nc" (default: )
-#       dir_Out(3)                 = "output_b1/b3_" (default: )
-#       dir_RestartOut(3)          = "output_b1/b3_" (default: )
-#       dir_LatLon(4)              = "../../test_basin/input/latlon/latlon_1.nc" (default: )
-#       dir_Out(4)                 = "output_b1/b4_" (default: )
-#       dir_RestartOut(4)          = "output_b1/b4_" (default: )
-#       dir_LatLon(5)              = "../../test_basin/input/latlon/latlon_2.nc" (default: )
-#       dir_Out(5)                 = "output_b1/b5_" (default: )
-#       dir_RestartOut(5)          = "output_b1/b5_" (default: )
-#       dir_LatLon(6)              = "../../test_basin_2/input/latlon/latlon.nc" (default: )
-#       dir_Out(6)                 = "output_b1/b6_" (default: )
-#       dir_RestartOut(6)          = "output_b1/b6_" (default: )
-
-#    case 5 :: INFLOW GAUGE and GRIDDED LAI
-#        nInflowGaugesTotal	   = 1               (default: nInflowGaugesTotal            = 0)
-#        NoInflowGauges_basin(1)   = 1               (default: NoInflowGauges_basin(1)       = 0)
-#        InflowGauge_id(1,1)       = 333             (default: InflowGauge_id(1,1)           = 398)
-#        InflowGauge_filename(1,1) = "00333.txt"     (default: InflowGauge_filename(1,1)     = "00398.txt")
-#        dir_Out(1)          	   = "output_b1/b1_" (default: "output_b1/")
-#        dir_RestartOut(1)         = "output_b1/b1_" (default: "output_b1/")
-#        dir_Out(2)                = "output_b1/b2_" (default: "output_b1/")
-#        dir_RestartOut(2)         = "output_b1/b2_" (default: "output_b1/")
-#        timeStep_LAI_input = -2                     (default: timeStep_LAI_input = 0)        ! monthly gridded LAI input
-#        outputFlxState(9)=.TRUE.                    (default: outputFlxState(9)=.FALSE.)     ! actual evapotranspiration aET [mm/T]
+# openmp parallelization. The test cases specified so far are described
+# in the README.
 
 # -------------------------------------------------------------------------------------------
 # Written  Feb 2014 Juliane Mai
@@ -160,6 +81,7 @@ set -e
 #          Mar 2014 Stephan Thober, Matthias Cuntz - added OpenMP test
 #          May 2014 Matthias Cuntz                 - specify compiler during clean
 #          Jul 2014 Juliane Mai                    - checking daily_discharge files added
+#          Mar 2015 Matthias Zink                  - added soil moisture calibration test
 
 # -------------------------------------------------------------------------------------------
 #
@@ -214,12 +136,12 @@ function usage () {
     printf "           (Default: all)\n"
     printf "    -s     System on which mHM will be compiled, e.g. 'eve2'\n"
     printf "           (Default: eve2).\n"
-    printf "    -t     Number of threads for OpenMP, e.g. 6\n"
-    printf "           Set to '' for deactivation of parallel test\n"
-    printf "           (Default: 2).\n"
+    printf "    -t     Number of threads for OpenMP, e.g. '6'\n"
+    printf "           Set to '0' for deactivation of parallel test\n"
+    printf "           (Default: '0 2').\n"
     printf "\n"
     printf "Example\n"
-    printf "    ${pprog} -c gnu45 -s eve2 -r debug -t 1\n"
+    printf "    ${pprog} -c gnu45 -s eve2 -r debug -t '0 2'\n"
 }
 
 # cleanup at end and when interupted
@@ -231,7 +153,7 @@ function cleanup ()
 
     # everything in case_?? dirs
     case_dirs=$(\ls -d case_*)
-    rmfiles="dds_results.out ${mhm_exe} cdo.*.terminal mhm_terminal.*.out diff.*.terminal"
+    rmfiles="dds_results.out ${mhm_exe} ${mhm_exe_omp} cdo.*.terminal mhm_terminal.*.out diff*.*.terminal"
     rmdirs="output_b1 output_b2"
 
     # using brace expansion
@@ -258,7 +180,7 @@ mhm_exe='mhm_for_check'
 compilers='all'
 system='eve2'
 release='all'
-threads=2
+threads='0 2'
 while getopts "c:hr:s:t:" Option ; do
     case ${Option} in
         h) usage 1>&2; exit 0;;
@@ -294,12 +216,12 @@ if [[ "${icdo}z" == "z" ]] ; then
     if [[ ${system} == "eve" ]] || [[ ${system} == "eve2" ]] ; then
         echo '   try to load module cdo ...'
         source /etc/profile.d/000-modules.sh
-	if [[ $(hostname) == 'frontend1' ]]; then
-            module load cdo/1.6.0-1 
-	fi
-	if [[ $(hostname) == 'frontend2' ]]; then
-	    module load cdo
-	fi
+        if [[ $(hostname) == 'frontend1' ]]; then
+            module load cdo
+        fi
+        if [[ $(hostname) == 'frontend2' ]]; then
+            module load cdo
+        fi
         icdo=$(which cdo)
     fi
 fi
@@ -322,7 +244,7 @@ system=$(echo ${system} | tr [A-Z] [a-z])
 # Do Tests
 #
 for irelease in ${release} ; do
-    for thread in 0 ${threads} ; do
+    for thread in ${threads} ; do
         for compiler in ${compilers} ; do
             # Compile mHM
             cd ..
@@ -330,18 +252,20 @@ for irelease in ${release} ; do
             echo '   using System:   '${system}
             echo '         Compiler: '${compiler}
             echo '         Release:  '${irelease}
-            make system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp= clean > /dev/null
+	    
             if [[ ${thread} -eq 0 ]] ; then
-		echo '         OpenMP:   False'
-		make system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp= > /dev/null
+                echo '         OpenMP:   False'
+                make system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp= cleanclean > /dev/null
+                make system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp= > /dev/null
             else
-		echo '         OpenMP:   True'
-		echo '         Threads:  '${thread}
-		make system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp=true > /dev/null
-		export OMP_NUM_THREADS=${thread}
+                echo '         OpenMP:   True'
+                echo '         Threads:  '${thread}
+                make system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp=true cleanclean > /dev/null
+                make system=${system} compiler=${compiler} release=${irelease} PROGNAME=${mhm_exe} openmp=true > /dev/null
+                export OMP_NUM_THREADS=${thread}
             fi
 
-	    # run checks
+            # run checks
             cd check
             case_dirs=$(\ls -d case_*)
             #case_dirs=$(\ls -d case_02)
@@ -357,27 +281,41 @@ for irelease in ${release} ; do
 
                 # remove old exe and link recently compiled
                 if [ -f ${mhm_exe} ] ; then rm ${mhm_exe} ; fi
-                ln -s ../../${mhm_exe}
+                ln -s ../../${mhm_exe} . 
+
+                # remove old files
+                if [ -f mhm_terminal.${pid}.out ] ; then rm mhm_terminal.${pid}.out ; fi
+                if [ -f cdo.${pid}.terminal ] ; then rm cdo.${pid}.terminal ; fi
 
                 # run mhm
-                echo '   mhm is running ...'
+                echo '   mhm is running ...    ./'${mhm_exe}' > mhm_terminal.'${pid}'.out' 
                 ./${mhm_exe} > mhm_terminal.${pid}.out
 
                 # mhm was running till the end?
+                set +e
                 found=$(grep 'mHM: Finished!' mhm_terminal.${pid}.out)
+                set -e
+
                 if [[ ${found} == 'mHM: Finished!' ]] ; then
-                  
+                    
                     nRecordsDiffer=0
                     cd output_save
-                    nc_files=$(\ls *.nc)
-		    set +e
-		    discharge_files=$(\ls *daily_discharge.out 2> /dev/null) # causes failure if no such file exists
-		    set -e
-		    if [[ -z ${discharge_files} ]] ; then
-			echo '   No discharge files written!'
-		    fi
+                    set +e
+                    nc_files=$(\ls *.nc 2> /dev/null)                        # causes failure if no such file exists
+                    discharge_files=$(\ls *daily_discharge.out 2> /dev/null) # causes failure if no such file exists
+                    finalpara_files=$(\ls *FinalParam.out 2> /dev/null)      # causes failure if no such file exists
+                    set -e
+                    if [[ -z ${nc_files} ]] ; then
+                        echo '   No NetCDF     files written!'
+                    fi
+                    if [[ -z ${discharge_files} ]] ; then
+                        echo '   No discharge  files written!'
+                    fi
+                    if [[ -z ${finalpara_files} ]] ; then
+                        echo '   No FinalParam files written!'
+                    fi
                     cd ..
-		    echo ''
+                    echo ''
 
                     # compare NetCDF outputs in output_b1/ with reference in output_save/
                     for nc_file in ${nc_files} ; do
@@ -398,32 +336,57 @@ for irelease in ${release} ; do
                         echo ''
                     done
 
-		    # compare daily_discharge outputs in output_b1/ with reference in output_save/
-		    # if [[ -e output_save/daily_discharge.out ]] ; then
-		    for discharge_file in ${discharge_files} ; do
-			echo '   *  diff output_save/'${discharge_file}' output_b1/'${discharge_file}
-			set +e
-			diff output_save/${discharge_file} output_b1/${discharge_file} > diff.${pid}.terminal
-			set -e
-			iRecordsDiffer=$(echo $(wc -l diff.${pid}.terminal) | cut -d ' ' -f 1)
-			if [[ ${iRecordsDiffer} -gt 0 ]] ; then
-			    iRecordsDiffer=$(( (iRecordsDiffer - 2) / 2 ))
-			fi
-			nRecordsDiffer=$((nRecordsDiffer+iRecordsDiffer))
-			nRecordsDiffer_allCases=$((nRecordsDiffer_allCases+iRecordsDiffer))
-			echo '      Number of records that differ: '${iRecordsDiffer}
-			if [[ ${iRecordsDiffer} -gt 0 ]] ; then
+                    # compare daily_discharge outputs in output_b1/ with reference in output_save/
+                    for discharge_file in ${discharge_files} ; do
+                        echo '   *  diff output_save/'${discharge_file}' output_b1/'${discharge_file}
+                        set +e
+                        diff output_save/${discharge_file} output_b1/${discharge_file} > diff1.${pid}.terminal
+                        set -e
+                        iRecordsDiffer=$(echo $(wc -l diff1.${pid}.terminal) | cut -d ' ' -f 1)
+                        if [[ ${iRecordsDiffer} -gt 0 ]] ; then
+                            iRecordsDiffer=$(( (iRecordsDiffer - 2) / 2 ))
+                        fi
+                        nRecordsDiffer=$((nRecordsDiffer+iRecordsDiffer))
+                        nRecordsDiffer_allCases=$((nRecordsDiffer_allCases+iRecordsDiffer))
+                        echo '      Number of records that differ: '${iRecordsDiffer}
+                        if [[ ${iRecordsDiffer} -gt 0 ]] ; then
                             echo '            --------------------------------------'
                             echo '                  Details                         '
                             echo '            --------------------------------------'
                             set +e
-			    diff output_save/${discharge_file} output_b1/${discharge_file}
-			    set -e
+                            diff output_save/${discharge_file} output_b1/${discharge_file}
+                            set -e
                             echo '            --------------------------------------'
-			fi
-			echo ''
-		    done
-			
+                        fi
+                        echo ''
+                    done
+
+                    # compare FinalParam.out outputs in output_b1/ with reference in output_save/
+                    # --> only for optimization cases
+                    for finalpara_file in ${finalpara_files} ; do
+                        echo '   *  diff output_save/'${finalpara_file}' output_b1/'${finalpara_file}
+                        set +e
+                        diff output_save/${finalpara_file} output_b1/${finalpara_file} > diff2.${pid}.terminal
+                        set -e
+                        iRecordsDiffer=$(echo $(wc -l diff2.${pid}.terminal) | cut -d ' ' -f 1)
+                        if [[ ${iRecordsDiffer} -gt 0 ]] ; then
+                            iRecordsDiffer=$(( (iRecordsDiffer - 2) / 2 ))
+                        fi
+                        nRecordsDiffer=$((nRecordsDiffer+iRecordsDiffer))
+                        nRecordsDiffer_allCases=$((nRecordsDiffer_allCases+iRecordsDiffer))
+                        echo '      Number of records that differ: '${iRecordsDiffer}
+                        if [[ ${iRecordsDiffer} -gt 0 ]] ; then
+                            echo '            --------------------------------------'
+                            echo '                  Details                         '
+                            echo '            --------------------------------------'
+                            set +e
+                            diff output_save/${finalpara_file} output_b1/${finalpara_file}
+                            set -e
+                            echo '            --------------------------------------'
+                        fi
+                        echo ''
+                    done
+                    
                     echo '   Total Number of records that differ: '${nRecordsDiffer}
 
                     if [[ ${nRecordsDiffer} -eq 0 ]] ; then

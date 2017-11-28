@@ -1,7 +1,7 @@
 # -*- Makefile -*-
 
 #
-# Setup file for Absoft compiler at Luis' Macbook Air
+# Setup file for Gnu compiler 4.9 at Matthias' Macbook Pro
 #
 # LICENSE
 #    This file is part of the UFZ makefile project.
@@ -28,66 +28,62 @@
 # Define subirectories if another structure
 
 # Paths
-ABSOFT := /Applications/Absoft11.1
-ABSOFTBIN := $(ABSOFT)/bin
-ABSOFTINC := $(ABSOFT)/f90includes64
-ABSOFTLIB := $(ABSOFT)/lib64
-
 GNUDIR := /usr/local
 GNULIB := $(GNUDIR)/lib
 GNUBIN := $(GNUDIR)/bin
 
 # Compiling
-F90 := $(ABSOFTBIN)/f90
+F90 := $(GNUBIN)/gfortran
 FC  := $(F90)
-CC  := $(GNUBIN)/gcc
+CC  := /usr/bin/gcc
+CPP := /usr/bin/cpp # could be   gcc -E -cpp   on Linux but does not work on Mac
 ifeq ($(release),debug)
-    # -s for initialize to 0;
-    # -Znnn suppress message number: 399 - Generic subroutine; 938 - real division in int; 1610 - generic-spec end interface
-    # Vectorisation: -YLOOP_ANALYZER -LNO:simd_verbose=on -LNO:simd=2 (1: default; 2: aggressive)
-    F90FLAGS += -g -en -Ra -Rb -Rc -Rn -Rp -Rs -YNDFP=1 -O0 -z0
-    #F90FLAGS += -g -en     -Rb -Rc     -Rp -Rs -YNDFP=1 -O0 -z0
-    CFLAGS   += -pedantic -Wall -W -O -g
+    F90FLAGS += -pedantic-errors -Wall -W -O -g -Wno-maybe-uninitialized
+    FCFLAGS  += -pedantic-errors -Wall -W -O -g -Wno-maybe-uninitialized
+    CFLAGS   += -pedantic -Wall -W -O -g -Wno-maybe-uninitialized
 else
     F90FLAGS += -O3
+    FCFLAGS  += -O3
     CFLAGS   += -O3
 endif
-#F90FLAGS += -m64 -cpp -f free -safefp -OPT:roundoff=0 #-stack:1f40000
-F90FLAGS += -m64 -cpp -safefp -OPT:roundoff=0 -p $(OBJPATH) #-stack:1f40000
-# -Znnn suppress message number: 399 - Generic subroutine; 938 - real division in int; 1610 - generic-spec end F90FLAGS += -Z399
-FCFLAGS += $(F90FLAGS)
-MODFLAG := -YMOD_OUT_DIR=# space significant
-CFLAGS  +=
-DEFINES += -DABSOFT -DgFortran
-LDFLAGS += -m64
+F90FLAGS += -cpp -ffree-form -ffixed-line-length-132
+FCFLAGS  += -ffixed-form -ffixed-line-length-132
+CFLAGS   +=
+MODFLAG  := -J# space significant
+DEFINES  += -DGFORTRAN -DgFortran
+
+# Linking
+LIBS += -L$(GNULIB)
+RPATH += -Wl,-rpath,$(GNULIB)
 
 # IMSL
-IMSLDIR := /opt/imsl/fnl600/macab110e64
+IMSLDIR :=
 
 # MKL
-MKLDIR := 
+MKLDIR :=
 MKL95DIR :=
 
 # NETCDF
 ifeq ($(netcdf),netcdf3)
-    NCDIR := $(ABSOFT)
-    NCINC := $(ABSOFTINC)
-    NCLIB := $(ABSOFTLIB)
+    NCDIR := /usr/local/netcdf-3.6.3-gfortran
 else
-    NCDIR   := $(ABSOFT)
-    NCINC   := $(ABSOFTINC)
-    NCLIB   := $(ABSOFTLIB)
-    SZLIB   := /usr/local
-    HDF5LIB := $(ABSOFTLIB)
+    NCDIR   := /usr/local
+    NCFDIR  := /usr/local/netcdf-fortran-4.4.1-gfortran
+    CURLLIB := /usr/lib
+    SZLIB   := /usr/local/lib
+    HDF5LIB := /usr/local/lib
 endif
 
 # PROJ
-PROJ4DIR := /usr/local
+PROJ4DIR := /usr/local/
 FPROJDIR := 
 
 # LAPACK
-LAPACKDIR   :=
-GFORTRANDIR := /usr/local
+LAPACKDIR   := 
+GFORTRANDIR := $(GNUDIR)
+
+# MPI
+MPIDIR := /usr/local/openmpi-1.8.3-gfortran
 
 # Documentation
 DOXYGENDIR := /usr/local/bin

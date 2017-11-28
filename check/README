@@ -62,6 +62,8 @@ case 1 :: RESTART READING AND WRITING, MPR deactivated, PET: Hargreaves-Samani
    processCase(5)             = 1                                               (default:       0)
    flag: read_restart         = .TRUE.                                          (default: .FALSE.)
    flag: perform_mpr          = .FALSE.                                         (default: .TRUE. )
+  mhm|_outputs.nml:
+   timeStep_model_outputs     = 0                                               (default:      -1)
 
 case 2 :: ROUTING DEACTIVATED, PET: Priestley Taylor, CHUNK READ IN: monthly
    nBasins                    = 2                                               (default:       1)
@@ -131,18 +133,40 @@ case 4 :: MULTISCALE
    dir_RestartOut(6)          = "output_b1/b6_"                                 (default: )
 
 case 5 :: INFLOW GAUGE, LAI FROM GRIDDED DATA
-   nBasins                    = 2                                               (default:       1)
-   nGaugesTotal               = 2                                               (default:       1)
+   nBasins                    = 3                                               (default:       1)
+   nGaugesTotal               = 6                                               (default:       1)
+   NoGauges_basin(1)          = 2                                               (default:       1)
+   NoGauges_basin(2)          = 2                                               (default:       1)
+   NoGauges_basin(3)          = 2                                               (default:       0)
    timeStep_LAI_input         = -2                                              (default:       0)
-   nInflowGaugesTotal         = 1                                               (default: nInflowGaugesTotal            = 0)
+   Gauge_id(1,2)              = 333                                             (default: n.a.)
+   gauge_filename(1,2)        = "00333.txt"                                     (default: n.a.)
+   Gauge_id(2,2)              = 333                                             (default: n.a.)
+   gauge_filename(2,2)        = "00333.txt"                                     (default: n.a.)
+   nInflowGaugesTotal         = 2                                               (default: nInflowGaugesTotal            = 0)
    NoInflowGauges_basin(1)    = 1                                               (default: NoInflowGauges_basin(1)       = 0)
    InflowGauge_id(1,1)        = 333                                             (default: InflowGauge_id(1,1)           = 398)
    InflowGauge_filename(1,1)  = "00333.txt"                                     (default: InflowGauge_filename(1,1)     = "00398.txt")
+   NoInflowGauges_basin(2)    = 1                                               (default: NoInflowGauges_basin(2)       = 0)
+   InflowGauge_id(2,1)        = 333                                             (default: InflowGauge_id(2,1)           = 398)
+   InflowGauge_filename(2,1)  = "00333.txt"                                     (default: InflowGauge_filename(2,1)     = "00398.txt")
+   InflowGauge_Headwater(2,1) = .TRUE.                                          (default:             )
    dir_Out(1)                 = "output_b1/b1_"                                 (default: "output_b1/")
    dir_RestartOut(1)          = "output_b1/b1_"                                 (default: "output_b1/")
    dir_Out(2)                 = "output_b1/b2_"                                 (default: "output_b1/")
    dir_RestartOut(2)          = "output_b1/b2_"                                 (default: "output_b1/")
+   dir_Out(3)                 = "output_b1/b3_"                                 (default: "output_b1/")
+   dir_RestartOut(3)          = "output_b1/b3_"                                 (default: "output_b1/")
 
+
+case 6 :: SOIL MOISTURE OPTIMIZATION ACTIVATED
+   nBasins                    = 2                                               (default:       1)
+   nGaugesTotal               = 2                                               (default:       1)
+   optimize                   = .TRUE.                                          (default: .FALSE.)
+   opti_method                = 1                                               (default:       3)
+   opti_function              = 13                                              (default:       3)
+   nIterations                = 6                                               (default:     400)
+   
 # -------------------------------------------------------------------------------------------
 #
 # Copyright 2014 Juliane Mai

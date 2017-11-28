@@ -24,7 +24,10 @@ MODULE mo_global_variables
   !           Stephan Thober, Jun 2014  - added timeStep_model_inputs and readPer
   !           Stephan Thober, Jun 2014  - added perform_mpr, updated restart flags
   !           Matthias Cuntz & Juliane Mai, Nov 2014 - LAI input from daily, monthly or yearly files
+  !           Matthias Zink,  Dec 2014 - adopted inflow gauges to ignore headwater cells
+  !           Matthias Zink,  Mar 2015 - added optional soil mositure readin: dirSoil_moisture, L1_sm
 
+  
   USE mo_kind,          ONLY: i4, i8, dp
   USE mo_mhm_constants, ONLY: nOutFlxState, YearMonths, maxNoBasins
 
@@ -41,7 +44,7 @@ MODULE mo_global_variables
   ! INPUT variables for configuration of mHM
   ! -------------------------------------------------------------------
   integer(i4),   public                              :: timeStep                   ! [h] simulation time step (= TS) in [h]
-  integer(i4),   public                              :: timeStep_model_inputs      ! frequency for reading meteo input
+  integer(i4),   dimension(:), allocatable, public   :: timeStep_model_inputs      ! frequency for reading meteo input
   real(dp),      dimension(:), allocatable, public   :: resolutionHydrology        ! [m or °] resolution of hydrology - Level 1
   real(dp),      dimension(:), allocatable, public   :: resolutionRouting          ! [m or °] resolution of routing - Level 11
   integer(i4),   dimension(:), allocatable, public   :: L0_Basin
@@ -53,6 +56,7 @@ MODULE mo_global_variables
   ! LAI information
   character(256), public                             :: inputFormat_gridded_LAI    ! format of gridded LAI data(bin or nc)
   integer(i4),    public                             :: timeStep_LAI_input         ! time step of gridded LAI input
+  integer(i4),    public                             :: timeStep_sm_input          ! time step of optional data: soil moisture sm 
   integer(i4),    public                             :: iFlag_cordinate_sys        ! options model for the run cordinate system
   ! -------------------------------------------------------------------
   ! OPTIMIZATION
@@ -85,7 +89,7 @@ MODULE mo_global_variables
   ! -------------------------------------------------------------------
   ! PROCESSES description
   ! -------------------------------------------------------------------
-  integer(i4), parameter,                      public :: nProcesses = 9         ! Number of possible processes to consider
+  integer(i4), parameter,                      public :: nProcesses = 10        ! Number of possible processes to consider
   !                                                                             !   process 1 :: interception
   !                                                                             !   process 2 :: snow
   !                                                                             !   process 3 :: soilmoisture
@@ -95,6 +99,7 @@ MODULE mo_global_variables
   !                                                                             !   process 7 :: percolation
   !                                                                             !   process 8 :: routing
   !                                                                             !   process 9 :: baseflow  
+  !                                                                             !   process 10:: neutrons  
   integer(i4),    dimension(nProcesses, 3),    public :: processMatrix          ! Info about which process runs in which option and
   !                                                                             ! number of parameters necessary for this option
   !                                                                             !   col1: process_switch 
@@ -124,10 +129,12 @@ MODULE mo_global_variables
   character(256), dimension(:), allocatable, public :: dirOut             ! Directory where output is written to
   character(256), dimension(:), allocatable, public :: dirRestartOut      ! Directory where output of restart is written to
   character(256), dimension(:), allocatable, public :: dirRestartIn       ! Directory where input of restart is read from
-  character(256), dimension(:), allocatable, public :: dirgridded_LAI     ! directory where gridded LAI is located
+  character(256), dimension(:), allocatable, public :: dirgridded_LAI     ! Directory where gridded LAI is located
                                                                           ! used when timeStep_LAI_input < 0
   character(256), dimension(:), allocatable, public :: dirLatLon          ! directory to lat lon files
 
+  character(256), dimension(:), allocatable, public :: dirSoil_moisture   ! File of monthly soil moisture
+  
   ! directory common to all basins 
   character(256),                            public :: dirConfigOut       ! Directory where config run output is written to
   character(256),                            public :: dirCommonFiles     ! directory where common input files should be located
@@ -227,8 +234,8 @@ MODULE mo_global_variables
   real(dp), public                                    :: fracSealed_cityArea ! fraction of area within city assumed to be
                                                                              ! perfectly sealed [0-1] 
   integer(i4),    public                              :: nLCover_scene       ! Number of land cover scene
-  character(256), public, dimension(:), allocatable   :: LCfilename          ! file names for the different land cover scenes
-  integer(i4),    public, dimension(:), allocatable   :: LCyearId            ! Mapping of landcover scenes (1, 2, ...)
+  character(256), public, dimension(:),   allocatable :: LCfilename          ! file names for the different land cover scenes
+  integer(i4),    public, dimension(:,:), allocatable :: LCyearId            ! Mapping of landcover scenes (1, 2, ...) for each basin
                                                                              ! to the actual year(1960, 1961, ...)
   ! LAI data
   ! variables used when timeStep_LAI_input == 0
@@ -274,11 +281,11 @@ MODULE mo_global_variables
       integer(i4)      :: nObs        ! total number of observations
   end type period
 
-  type(period), public :: warmPer     ! time period for warming
-  type(period), public :: evalPer     ! time period for model evaluation
-  type(period), public :: simPer      ! warmPer + evalPer
-  type(period), public :: readPer     ! start and end dates of read period
-  integer(i4), public  :: warmingDays ! number of days for warm up period
+  type(period), dimension(:), allocatable, public :: warmPer     ! time period for warming
+  type(period), dimension(:), allocatable, public :: evalPer     ! time period for model evaluation
+  type(period), dimension(:), allocatable, public :: simPer      ! warmPer + evalPer
+  type(period),                            public :: readPer     ! start and end dates of read period
+  integer(i4),  dimension(:), allocatable, public :: warmingDays ! number of days for warm up period
 
   ! -------------------------------------------------------------------
   ! BASIN general description
@@ -294,10 +301,11 @@ MODULE mo_global_variables
      integer(i4), dimension(:,:), allocatable   :: gaugeNodeList      ! Gauge node list at L11
 
      ! discharge inflow gauges (e.g if headwater bsins are missing)
-     integer(i4), dimension(:),   allocatable   :: nInflowGauges      ! Number of gauges within a basin
-     integer(i4), dimension(:,:), allocatable   :: InflowGaugeIdList  ! Gauge Id list (e.g. 0000444 0000445)
+     integer(i4), dimension(:),   allocatable   :: nInflowGauges        ! Number of gauges within a basin
+     integer(i4), dimension(:,:), allocatable   :: InflowGaugeIdList    ! Gauge Id list (e.g. 0000444 0000445)
      integer(i4), dimension(:,:), allocatable   :: InflowGaugeIndexList ! Gauge index list (e.g. 1 for 00444, 2 for 00445)
-     integer(i4), dimension(:,:), allocatable   :: InflowGaugeNodeList ! Gauge node list at L11
+     integer(i4), dimension(:,:), allocatable   :: InflowGaugeNodeList  ! Gauge node list at L11
+     logical,     dimension(:,:), allocatable   :: InflowGaugeHeadwater ! if headwater cells of inflow gauge will be considered
 
      ! basin outlet
      integer(i4), dimension(:), allocatable     :: L0_rowOutlet       ! Outlet location in L0 
@@ -396,12 +404,22 @@ MODULE mo_global_variables
   ! dim2 = number of meteorological time steps
   real(dp), public, dimension(:,:), allocatable    :: L1_pre           ! [mm]    Precipitation
   real(dp), public, dimension(:,:), allocatable    :: L1_temp          ! [degC]  Air temperature
-  real(dp), public, dimension(:,:), allocatable    :: L1_pet           ! [mm]    Potential evapotranspiration
+  real(dp), public, dimension(:,:), allocatable    :: L1_pet           ! [mm TST-1] Potential evapotranspiration
   real(dp), public, dimension(:,:), allocatable    :: L1_tmin          ! [degC]  minimum daily air temperature
   real(dp), public, dimension(:,:), allocatable    :: L1_tmax          ! [degC]  maximum daily air temperature
   real(dp), public, dimension(:,:), allocatable    :: L1_netrad        ! [W m2]  net radiation
   real(dp), public, dimension(:,:), allocatable    :: L1_absvappress   ! [hPa]   absolute vapour pressure
   real(dp), public, dimension(:,:), allocatable    :: L1_windspeed     ! [m s-1] windspeed
+
+  ! optional data
+  ! dim1 = number grid cells L1
+  ! dim2 = number of meteorological time steps
+  ! soil moisture
+  real(dp), public, dimension(:,:), allocatable    :: L1_sm                  ! [-] soil moisture input for optimization
+  logical,  public, dimension(:,:), allocatable    :: L1_sm_mask             ! [-] mask for valid data in L1_sm 
+  integer(i4)                                      :: nTimeSteps_L1_sm       ! [-] number of time steps in L1_sm_mask
+  integer(i4)                                      :: nSoilHorizons_sm_input ! No. of mhm soil horizons equivalent to
+  !                                                                          ! soil moisture input
 
   ! Land cover
   ! dim1 = number grid cells L1
@@ -418,25 +436,27 @@ MODULE mo_global_variables
   real(dp), public, dimension(:,:), allocatable :: L1_soilMoist    ! [mm]  Soil moisture of each horizon
   real(dp), public, dimension(:), allocatable   :: L1_unsatSTW     ! [mm]  upper soil storage
   real(dp), public, dimension(:), allocatable   :: L1_satSTW       ! [mm]  groundwater storage
+  real(dp), public, dimension(:), allocatable   :: L1_neutrons     ! [cph] ground albedo neutrons
 
   ! Fluxes
   ! dim1 = number grid cells L1
   ! dim2 = number model soil horizons
-  real(dp), public, dimension(:,:), allocatable :: L1_aETSoil      ! [mm]       Actual ET from soil layers
-  real(dp), public, dimension(:), allocatable   :: L1_aETCanopy    ! [mm d-1]   Real evaporation intensity from canopy
-  real(dp), public, dimension(:), allocatable   :: L1_aETSealed    ! [mm d-1]   Real evap. from free water surfaces
-  real(dp), public, dimension(:), allocatable   :: L1_baseflow     ! [mm d-1]   Baseflow
-  real(dp), public, dimension(:,:), allocatable :: L1_infilSoil    ! [mm d-1]   Infiltration intensity each soil horizon 
-  real(dp), public, dimension(:), allocatable   :: L1_fastRunoff   ! [mm d-1]   Fast runoff component
-  real(dp), public, dimension(:), allocatable   :: L1_melt         ! [mm d-1]   Melting snow depth.
-  real(dp), public, dimension(:), allocatable   :: L1_percol       ! [mm d-1]   Percolation.
-  real(dp), public, dimension(:), allocatable   :: L1_preEffect    ! [mm d-1]   Effective precip. depth (snow melt + rain)
-  real(dp), public, dimension(:), allocatable   :: L1_rain         ! [mm]       Rain precipitation depth
-  real(dp), public, dimension(:), allocatable   :: L1_runoffSeal   ! [mm d-1]   Direct runoff from impervious areas
-  real(dp), public, dimension(:), allocatable   :: L1_slowRunoff   ! [mm d-1]   Slow runoff component
-  real(dp), public, dimension(:), allocatable   :: L1_snow         ! [mm d-1]   Snow precipitation depth
-  real(dp), public, dimension(:), allocatable   :: L1_Throughfall  ! [mm d-1]   Throughfall.             
-  real(dp), public, dimension(:), allocatable   :: L1_total_runoff ! [m3 s-1]   Generated runoff
+  real(dp), public, dimension(:),   allocatable :: L1_pet_calc     ! [mm TS-1] estimated/corrected potential evapotranspiration  
+  real(dp), public, dimension(:,:), allocatable :: L1_aETSoil      ! [mm TS-1] Actual ET from soil layers
+  real(dp), public, dimension(:),   allocatable :: L1_aETCanopy    ! [mm TS-1] Real evaporation intensity from canopy
+  real(dp), public, dimension(:),   allocatable :: L1_aETSealed    ! [mm TS-1] Real evap. from free water surfaces
+  real(dp), public, dimension(:),   allocatable :: L1_baseflow     ! [mm TS-1] Baseflow
+  real(dp), public, dimension(:,:), allocatable :: L1_infilSoil    ! [mm TS-1] Infiltration intensity each soil horizon 
+  real(dp), public, dimension(:),   allocatable :: L1_fastRunoff   ! [mm TS-1] Fast runoff component
+  real(dp), public, dimension(:),   allocatable :: L1_melt         ! [mm TS-1] Melting snow depth.
+  real(dp), public, dimension(:),   allocatable :: L1_percol       ! [mm TS-1] Percolation.
+  real(dp), public, dimension(:),   allocatable :: L1_preEffect    ! [mm TS-1] Effective precip. depth (snow melt + rain)
+  real(dp), public, dimension(:),   allocatable :: L1_rain         ! [mm TS-1] Rain precipitation depth
+  real(dp), public, dimension(:),   allocatable :: L1_runoffSeal   ! [mm TS-1] Direct runoff from impervious areas
+  real(dp), public, dimension(:),   allocatable :: L1_slowRunoff   ! [mm TS-1] Slow runoff component
+  real(dp), public, dimension(:),   allocatable :: L1_snow         ! [mm TS-1] Snow precipitation depth
+  real(dp), public, dimension(:),   allocatable :: L1_Throughfall  ! [mm TS-1] Throughfall.             
+  real(dp), public, dimension(:),   allocatable :: L1_total_runoff ! [m3 TS-1] Generated runoff
 
   ! Effective parameters
   ! dim1 = number grid cells L1

@@ -20,6 +20,9 @@
 ! Rohini Kumar and
 ! Olda Rakovec  , Sep 2014 - added KGE estimator (OF number 9)
 ! Matthias Zink,  Nov 2014 - added multiple options for process 5 - PET
+! Matthias Zink, Dec 2014  - adopted inflow gauges to ignore headwater cells
+! Matthias Zink, Mar 2015  - added optional soil mositure read in for calibration
+  
 !******************************************************************************************
 !
 !******************************************************************************************
@@ -159,6 +162,27 @@ dir_RestartOut(3)    = "test_basin/restart/"
 dir_Out(3)           = "test_basin/output_b3/"
 /
 
+!> data which are optionally needed for optimization
+&optional_data
+!> soil moisture data
+!> currently mhm can be calibrated against the fraction of moisture
+!> down to a specific mhm soil layer (integral over the layers)
+!> here soil moisture is defined as fraction between water content within the
+!> soil column and saturated water content (porosity). \n
+!
+!> directory to soil moisture data
+dir_soil_moisture(1)   = "test_basin/input/optional_data/"
+!> number of mHM soil layers (nSoilHorizons_mHM) which the soil moisture
+!> input is representative for (counted top to down)
+nSoilHorizons_sm_input = 1
+!> time stepping of the soil moisture input
+!>     -1: daily   SM values\n
+!>     -2: monthly SM values\n
+!>     -3: yearly  SM values\n
+!-----------------------------
+timeStep_sm_input = -2
+/
+     
 !
 !******************************************************************************************
 ! MAIN  
@@ -204,9 +228,9 @@ resolution_Routing(1) = 48000
 resolution_Routing(2) = 24000 
 resolution_Routing(3) = 48000
 !----------------------------------------------------------------------------
-!> specify same integer for basins to share L0_data to save memory \n
-!> same integer HAVE TO FOLLOW EACH OTHER DIRECTLY and are not allowed to be \n
-!> intersected by other integers \n
+!> specify same index for basins to share L0_data to save memory \n
+!> the index must MONOTONICALLY increase. Index can be repeated. e.g., 1,1,2,2,3 \n
+!> but not 1,2,1. The correct way should be: 1,1,2.\n
 !-----------------------------------------------------------------------------
 L0Basin(1) = 1
 L0Basin(2) = 1
@@ -222,15 +246,20 @@ optimize = .false.
 !> (3) SCE                 \n
 !> additional settings for the different methods can be provided below in namelist Optimization
 opti_method = 1
-!> (1) 1.0 - NSE  \n
-!> (2) 1.0 - lnNSE  \n
-!> (3) 1.0 - 0.5*(NSE+lnNSE)  \n
-!> (4) -1.0 * loglikelihood with trend removed from absolute errors and then lag(1)-autocorrelation removed  \n
-!> (5) ((1-NSE)**6+(1-lnNSE)**6)**(1/6)  \n
-!> (6) SSE  \n
-!> (7) -1.0 * loglikelihood with trend removed from absolute errors  \n
-!> (8) -1.0 * loglikelihood with trend removed from the relative errors and then lag(1)-autocorrelation removed  \n
-!> (9) 1.0 - KGE (Kling-Gupta efficiency measure)  \n
+!> (1)  Q:   1.0 - NSE  \n
+!> (2)  Q:   1.0 - lnNSE  \n
+!> (3)  Q:   1.0 - 0.5*(NSE+lnNSE)  \n
+!> (4)  Q:  -1.0 * loglikelihood with trend removed from absolute errors and then lag(1)-autocorrelation removed  \n
+!> (5)  Q:   ((1-NSE)**6+(1-lnNSE)**6)**(1/6)  \n
+!> (6)  Q:   SSE  \n
+!> (7)  Q:  -1.0 * loglikelihood with trend removed from absolute errors  \n
+!> (8)  Q:  -1.0 * loglikelihood with trend removed from the relative errors and then lag(1)-autocorrelation removed \n
+!> (9)  Q:  1.0 - KGE (Kling-Gupta efficiency measure)  \n
+!> (10) SM: 1.0 - KGE of catchment average soilmoisture \n
+!> (11) SM: 1.0 - Pattern dissimilarity (PD) of spatially distributed soil moisture \n
+!> (12) SM: Sum of squared errors (SSE) of spatially distributed standard score (normalization) of soil moisture \n
+!> (13) SM: 1.0 - average temporal correlation of spatially distributed soil moisture \n
+!> (14) Q:  sum[((1.0-KGE_i)/ nGauges)**6]**(1/6) > combination of KGE of every gauging station based on a power-6 norm \n
 !> further functions can be implemented in mo_objective_function
 opti_function = 3
 !-----------------------------------------------------------------------------
@@ -239,6 +268,9 @@ opti_function = 3
 read_restart  = .FALSE.
 write_restart = .TRUE.
 perform_mpr   = .TRUE.
+/
+
+&time_periods
 !-----------------------------------------------------------------------------
 !> specification of number of warming days [d] and the simulation period.\n
 !> All dynamic data sets(e.g., meteo. forcings, landcover scenes) should start 
@@ -255,19 +287,33 @@ perform_mpr   = .TRUE.
 !>    day, which is 2001/01/01 = 1), THEN all dynamic datasets should be given for
 !>    the effective modeling period of 2001/01/01 to 2003/12/31.
 !-----------------------------------------------------------------------------
-warmingDays    = 0
+warming_Days(1)    = 0
+warming_Days(2)    = 0
+warming_Days(3)    = 0
 !> first year of wanted simulation period
-evalPer%yStart = 1990
+eval_Per(1)%yStart = 1990
+eval_Per(2)%yStart = 1990
+eval_Per(3)%yStart = 1990
 !> first month of wanted simulation period
-evalPer%mStart = 01
+eval_Per(1)%mStart = 01
+eval_Per(2)%mStart = 01
+eval_Per(3)%mStart = 01
 !> first day   of wanted simulation period
-evalPer%dStart = 01
+eval_Per(1)%dStart = 01
+eval_Per(2)%dStart = 01
+eval_Per(3)%dStart = 01
 !> last year   of wanted simulation period
-evalPer%yEnd   = 1993
+eval_Per(1)%yEnd   = 1993
+eval_Per(2)%yEnd   = 1993
+eval_Per(3)%yEnd   = 1993
 !> last month  of wanted simulation period
-evalPer%mEnd   = 12
+eval_Per(1)%mEnd   = 12
+eval_Per(2)%mEnd   = 12
+eval_Per(3)%mEnd   = 12
 !> last day    of wanted simulation period
-evalPer%dEnd   = 31
+eval_Per(1)%dEnd   = 31
+eval_Per(2)%dEnd   = 31
+eval_Per(3)%dEnd   = 31
 !> switch to control read input frequency of the gridded meteo input, 
 !> i.e. precipitation, potential evapotransiration, and temperature\n
 !>      >0: after each <timeStep_model_inputs> days\n
@@ -275,7 +321,11 @@ evalPer%dEnd   = 31
 !>      -1: daily\n
 !>      -2: monthly\n
 !>      -3: yearly\n
-timestep_model_inputs = 0
+!> if timestep_model_inputs is non-zero, than it has to be non-zero\n
+!> for all basins\n
+time_step_model_inputs(1) = 0
+time_step_model_inputs(2) = 0
+time_step_model_inputs(3) = 0
 /
 
 !******************************************************************************************
@@ -365,7 +415,7 @@ inputFormat_gridded_LAI = "nc"
 !******************************************************************************************
 !> This matrix manages which processes and process descriptions are used for simulation.
 !> The number of processes and its corresponding numbering are fixed. The process description can be 
-!> chosen from the options listed undeneath the name of the particular process case. This number has to be
+!> chosen from the options listed above the name of the particular process case. This number has to be
 !> given for processCase(*).
 !
 &processSelection
@@ -375,7 +425,7 @@ processCase(1) = 1
 !> snow
 !> 1 - degree-day approach
 processCase(2) = 1
-!> soilmoisture
+!> soil moisture
 !> 1 - multi-layer infiltration capacity approach, Brooks-Corey like
 processCase(3) = 1
 !> directRunoff
@@ -397,6 +447,12 @@ processCase(7) = 1
 !> 0 - deactivated
 !> 1 - Muskingum approach
 processCase(8) = 1
+!> ground albedo of cosmic-ray neutrons
+!> THIS IS WORK IN PROGRESS, DO NOT USE FOR RESEARCH
+!> 0 - deactivated
+!> 1 - inverse N0 based on Desilets et al. 2010 
+!> 2 - COSMIC forward operator by Shuttlworth et al. 2013
+processCase(10) = 0
 /
 
 !******************************************************************************************
@@ -459,6 +515,8 @@ NoInflowGauges_basin(1)   = 0
 InflowGauge_id(1,1)       = -9
 !> name of file with timeseries of inflow gauge(1) for subbasin(1) --> (1,1) 
 InflowGauge_filename(1,1) = ""
+!> consider flows from upstream/headwater cells of inflow gauge(1) for subbasin(1) --> (1,1) 
+InflowGauge_Headwater(1,1) = .FALSE.
 !
 !> basin 2
 NoInflowGauges_basin(2)   = 0
@@ -466,6 +524,8 @@ NoInflowGauges_basin(2)   = 0
 InflowGauge_id(2,1)       = -9
 !> name of file with timeseries of inflow gauge(1) for subbasin(2) --> (2,1) 
 InflowGauge_filename(2,1) = ""
+!> consider flows from upstream/headwater cells of inflow gauge(1) for subbasin(2) --> (2,1) 
+InflowGauge_Headwater(2,1) = .TRUE.
 !
 !> basin 3
 NoInflowGauges_basin(3)   = 0
@@ -473,6 +533,8 @@ NoInflowGauges_basin(3)   = 0
 InflowGauge_id(3,1)       = -9
 !> name of file with timeseries of inflow gauge(1) for subbasin(3) --> (3,1) 
 InflowGauge_filename(3,1) = ""
+!> consider flows from upstream/headwater cells of inflow gauge(1) for subbasin(3) --> (3,1)
+InflowGauge_Headwater(3,1) = .TRUE.
 /
 
 !******************************************************************************************
@@ -505,7 +567,7 @@ fnight_temp  = -0.76,  -1.30,  -1.88,  -2.38, -2.72, -2.75, -2.74, -3.04, -2.44,
 !> General: \n
 !  -------------------------------------
 !> number of iteration steps by parameterset
-nIterations = 400
+nIterations = 7
 !> seed of random number gemerator (default: -9)
 !> if default: seed is obtained from system clock
 seed = 1235876

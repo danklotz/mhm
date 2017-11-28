@@ -246,7 +246,8 @@ CONTAINS
   !>        \brief total runoff accumulation at level 1
 
   !>        \details Accumulates runoff.
-  !>        \f[ q_{T} = q_0 + q_1 + q_2 + q_{D} \f]
+  !>        \f[ q_{T} = ( q_0 + q_1 + q_2 ) * (1-fSealed) + q_{D} * fSealed \f],
+  !>        where fSealed is the fraction of sealed area.
 
   !     CALLING SEQUENCE
   !         runoff_accum(fSealed_area_fraction, fast_interflow, slow_interflow, baseflow,  direct_runoff, total_runoff)
@@ -289,7 +290,8 @@ CONTAINS
   !>        \author Vladyslav Prykhodko
   !>        \date Dec 2012
   !         Modified  RK, Jul 2013  - A Mosiac approach is implemented for processes accounted
-  !                                   within the permeamble & impervious area. 
+  !                                   within the permeamble & impervious area.
+  !                   ST, May 2015  - updated equation in the documentation
 
   SUBROUTINE L1_total_runoff(fSealed_area_fraction, fast_interflow, slow_interflow, &
                              baseflow, direct_runoff, total_runoff)
@@ -363,11 +365,11 @@ CONTAINS
   !>        \author Luis Samaniego
   !>        \date Jan 2013
   !         Modified  Matthias Zink , Mar 2014 - added inflow from upstream areas
-
+  !                   Matthias Zink,  Dec 2014 - adopted inflow gauges to ignore headwater cells
 
   ! ------------------------------------------------------------------
   SUBROUTINE L11_runoff_acc(qAll,efecArea, L11id, TS, nInflowGauges, InflowIndexList, &
-                            InflowNodeList, QInflow, qOUT)
+                            InflowHeadwater, InflowNodeList, QInflow, qOUT)
 
     use mo_mhm_constants, only:   HourSecs
 
@@ -379,6 +381,7 @@ CONTAINS
     integer(i4),               intent(in)  :: ts              ! [h]        time step 
     integer(i4),               intent(in)  :: nInflowGauges   ! [-]        number of inflow points
     integer(i4), dimension(:), intent(in)  :: InflowIndexList ! [-]        index of inflow points
+    logical,     dimension(:), intent(in)  :: InflowHeadwater ! [-]        if to consider headwater cells of inflow gauge
     integer(i4), dimension(:), intent(in)  :: InflowNodeList  ! [-]        L11 ID of inflow points
     real(dp),    dimension(:), intent(in)  :: QInflow         ! [m3 s-1]   inflowing water 
     real(dp),    dimension(:), intent(out) :: qout            ! [m3 s-1]   aggregated runoff at l11 
@@ -417,7 +420,13 @@ CONTAINS
     ! discharge for inflow gauges (e.g. for missing upstream catchments) is added here
     if (nInflowGauges .gt. 0) then
        do k = 1, nInflowGauges
-          qOUT(InflowNodeList(k)) = qOUT(InflowNodeList(k)) + QInflow(InflowIndexList(k))
+          if (InflowHeadwater(k)) then 
+             ! add inflowing water to water produced by upstream/headwater cells
+             qOUT(InflowNodeList(k)) = qOUT(InflowNodeList(k)) + QInflow(InflowIndexList(k))
+          else
+             ! put only timeseries and cut upstream/headwater cells produced water for routing
+             qOUT(InflowNodeList(k)) = QInflow(InflowIndexList(k))
+          end if
        end do
     end if
 
