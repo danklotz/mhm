@@ -75,37 +75,41 @@ CONTAINS
   !     HISTORY
   !>        \author Matthias Zink
   !>        \date Dec 2012
-  !         Modified Luis Samaniego, Jan 2013 - messages
-  !                  Rohini Kumar
-  !                  Matthias Cuntz, Jan  2013 - namelist consolidation and positioning
-  !                  Matthias Zink,  Jan  2013 - bug fix, added gaugeinfo reading
-  !                  Rohini Kumar,   Jun  2013 - added restart flags
-  !                  R. Kumar &
-  !                  S. Thober,      Aug. 2013 - code change to incorporate output timestep
-  !                                              during writing of the netcdf file
-  !                  Rohini Kumar,   Aug  2013 - name changed from "inputFormat" to inputFormat_meteo_forcings
-  !                  Rohini Kumar,   Aug  2013 - added dirSoil_LUT and dirGeology_LUT, and changed in
-  !                                              namelist made accordingly
-  !                  Rohini Kumar,   Aug  2013 - added new namelist for LAI related datasets, and changed in
-  !                                              within the code made accordingly
-  !                  Matthias Zink,  Aug  2013 - changed read in for land cover period
-  !                  Juliane Mai,    Oct  2013 - adding global_parameters_name
-  !                  Matthias Zink,  Nov  2013 - edited documentation and included DEFAULT cases for ptocess Matrix
-  !                  Stephan Thober, Nov  2013 - added read of directories where latitude longitude fields are located
-  !                  Matthias Zink,  Feb  2014 - added multiple options for PET process
-  !                  Matthias Zink,  Mar  2014 - added inflow from upstream areas and gauge information as namelist
-  !                  Rohini Kumar,   May  2014 - added options for the model run coordinate system
-  !                  Stephan Thober, May  2014 - added switch for chunk read in
-  !                  Stephan Thober, Jun  2014 - added option for switching off mpr
-  !                  Matthias Cuntz & Juliane Mai Nov 2014 - LAI input from daily, monthly or yearly files
-  !                  Matthias Zink,  Dec  2014 - adopted inflow gauges to ignore headwater cells
-  !                  Matthias Zink,  Mar  2015 - added optional soil moisture read in for calibration
-  !                  Matthias Cuntz, Jul  2015 - removed adjustl from trim(adjustl()) of Geoparams for compilation with PGI
-  !                  Stephan Thober, Aug  2015 - added read_config_routing and read_routing_params from mRM
-  !                  Oldrich Rakovec,Oct  2015 - added reading of the basin average TWS data
-  !                  Rohini Kumar,   Mar  2016 - options to handle different soil databases
-  !                  Stephan Thober, Nov  2016 - moved nProcesses and processMatrix to common variables
+  !         Modified Luis Samaniego,              Jan 2013 - messages
+  !                  Rohini Kumar              
+  !                  Matthias Cuntz,              Jan  2013 - namelist consolidation and positioning
+  !                  Matthias Zink,               Jan  2013 - bug fix, added gaugeinfo reading
+  !                  Rohini Kumar,                Jun  2013 - added restart flags
+  !                  R. Kumar &            
+  !                  S. Thober,                   Aug. 2013 - code change to incorporate output timestep
+  !                                                           during writing of the netcdf file
+  !                  Rohini Kumar,                Aug  2013 - name changed from "inputFormat" to inputFormat_meteo_forcings
+  !                  Rohini Kumar,                Aug  2013 - added dirSoil_LUT and dirGeology_LUT, and changed in
+  !                                                           namelist made accordingly
+  !                  Rohini Kumar,                Aug  2013 - added new namelist for LAI related datasets, and changed in
+  !                                                           within the code made accordingly
+  !                  Matthias Zink,               Aug  2013 - changed read in for land cover period
+  !                  Juliane Mai,                 Oct  2013 - adding global_parameters_name
+  !                  Matthias Zink,               Nov  2013 - edited documentation and included DEFAULT cases for ptocess Matrix
+  !                  Stephan Thober,              Nov  2013 - added read of directories where latitude longitude fields are located
+  !                  Matthias Zink,               Feb  2014 - added multiple options for PET process
+  !                  Matthias Zink,               Mar  2014 - added inflow from upstream areas and gauge information as namelist
+  !                  Rohini Kumar,                May  2014 - added options for the model run coordinate system
+  !                  Stephan Thober,              May  2014 - added switch for chunk read in
+  !                  Stephan Thober,              Jun  2014 - added option for switching off mpr
+  !                  Matthias Cuntz & Juliane Mai Nov  2014 - LAI input from daily, monthly or yearly files
+  !                  Matthias Zink,               Dec  2014 - adopted inflow gauges to ignore headwater cells
+  !                  Matthias Zink,               Mar  2015 - added optional soil moisture read in for calibration
+  !                  Matthias Cuntz,              Jul  2015 - removed adjustl from trim(adjustl()) of Geoparams for PGI compatibilty
+  !                  Stephan Thober,              Aug  2015 - added read_config_routing and read_routing_params from mRM
+  !                  Oldrich Rakovec,             Oct  2015 - added reading of the basin average TWS data
+  !                  Rohini Kumar,                Mar  2016 - options to handle different soil databases
+  !                  Stephan Thober,              Nov  2016 - moved nProcesses and processMatrix to common variables
+  !                  Rohini Kumar,                Dec  2016 - option to handle monthly mean gridded fields of LAI
+  !                  M.Zink & M. Cuneyd Demirel   Mar  2017 - Added Jarvis soil water stress function at SM process(3)  
+  !                  M.C. Demirel & Simon Stisen  Apr  2017 - Added FC dependency on root fraction coefficient (ET) at SM process(3)  
 
+  
   subroutine read_config()
 
     use mo_julian,           only: date2dec, dec2date
@@ -152,6 +156,7 @@ CONTAINS
          basin_avg_TWS_obs,                                 & ! basin avg TWS data
          fileTWS,                                           & ! directory with basin average tws data
          dirNeutrons, timeStep_neutrons_input,              & ! directory where neutron data is located
+         dirEvapotranspiration, timeStep_et_input,          & ! directory and time stepping of evapotranspiration data
          iFlag_soilDB,                                      & ! options to handle different types of soil databases
          HorizonDepth_mHM, nSoilHorizons_mHM, tillageDepth, & ! soil horizons info for mHM
          fracSealed_cityArea, nLcoverScene,                 & ! land cover information
@@ -164,6 +169,7 @@ CONTAINS
          evalPer, simPer,                                   & ! model eval. & sim. periods
                                 !                                                    ! (sim. = wrm. + eval.)
          evap_coeff,                                        & ! pan evaporation
+         read_meteo_weights,                                & ! flag for read meteo weights
          fday_prec, fnight_prec, fday_pet,                  & ! day-night fraction
          fnight_pet, fday_temp, fnight_temp,                & ! day-night fraction
          timeStep_model_outputs,                            & ! timestep for writing model outputs
@@ -226,6 +232,10 @@ CONTAINS
     real(dp), dimension(nColPars)                   :: rootFractionCoefficient_forest
     real(dp), dimension(nColPars)                   :: rootFractionCoefficient_impervious
     real(dp), dimension(nColPars)                   :: rootFractionCoefficient_pervious
+    real(dp), dimension(nColPars)                   :: jarvis_sm_threshold_c1
+    real(dp), dimension(nColPars)                   :: rootFractionCoefficient_sand
+    real(dp), dimension(nColPars)                   :: rootFractionCoefficient_clay
+    
     ! directRunoff
     real(dp), dimension(nColPars)                   :: imperviousStorageCapacity
     ! PET0
@@ -270,7 +280,7 @@ CONTAINS
     ! some dummy arrays for namelist read in (allocatables not allowed in namelists)
     character(256)                                  :: dummy
 
-    integer(i4),dimension(maxNoSoilHorizons)        :: soil_Depth           ! depth of the single horizons
+    integer(i4),dimension(maxNoSoilHorizons)        :: soil_Depth             ! depth of the single horizons
     character(256), dimension(maxNoBasins)          :: dir_Morpho
     character(256), dimension(maxNoBasins)          :: dir_LCover
     character(256), dimension(maxNoBasins)          :: dir_Precipitation
@@ -285,11 +295,12 @@ CONTAINS
     character(256), dimension(maxNoBasins)          :: dir_RestartOut
     character(256), dimension(maxNoBasins)          :: dir_RestartIn
     character(256), dimension(maxNoBasins)          :: file_LatLon
-    character(256), dimension(maxNoBasins)          :: dir_gridded_LAI     ! directory of gridded LAI data
-    !                                                                      ! used when timeStep_LAI_input<0
-    character(256), dimension(maxNoBasins)          :: dir_soil_moisture   ! soil moisture input
-    character(256), dimension(maxNoBasins)          :: file_TWS            ! total water storage input file
-    character(256), dimension(maxNoBasins)          :: dir_neutrons        ! ground albedo neutron input
+    character(256), dimension(maxNoBasins)          :: dir_gridded_LAI        ! directory of gridded LAI data
+    !                                                                         ! used when timeStep_LAI_input<0
+    character(256), dimension(maxNoBasins)          :: dir_soil_moisture      ! soil moisture input
+    character(256), dimension(maxNoBasins)          :: file_TWS               ! total water storage input file
+    character(256), dimension(maxNoBasins)          :: dir_neutrons           ! ground albedo neutron input
+    character(256), dimension(maxNoBasins)          :: dir_evapotranspiration ! ground albedo neutron input
 
     !
     integer(i4)                                     :: nLCover_scene   ! given number of land cover scenes
@@ -323,7 +334,9 @@ CONTAINS
         nSoilHorizons_sm_input, &
         timeStep_sm_input, &
         file_TWS, &
-        dir_neutrons
+        dir_neutrons, &
+        dir_evapotranspiration, &
+        timeStep_et_input
     ! namelist spatial & temporal resolution, otmization information
     namelist /mainconfig/ timestep, iFlag_cordinate_sys, resolution_Hydrology, resolution_Routing, &
          L0Basin, optimize, optimize_restart, opti_method, opti_function, nBasins, read_restart,   &
@@ -339,7 +352,7 @@ CONTAINS
     ! namelist for pan evaporation
     namelist/panEvapo/evap_coeff
     ! namelist for night-day ratio of precipitation, referenceET and temperature
-    namelist/nightDayRatio/fnight_prec,fnight_pet,fnight_temp
+    namelist/nightDayRatio/read_meteo_weights,fnight_prec,fnight_pet,fnight_temp
     ! namelsit process selection
     namelist /processSelection/ processCase
     ! namelist parameters
@@ -353,7 +366,21 @@ CONTAINS
          PTF_Ks_sand, PTF_Ks_clay, PTF_Ks_curveSlope,                                                        &
          rootFractionCoefficient_forest, rootFractionCoefficient_impervious,                                 &
          rootFractionCoefficient_pervious, infiltrationShapeFactor
-    namelist /directRunoff1/ imperviousStorageCapacity
+    namelist/soilmoisture2/ orgMatterContent_forest, orgMatterContent_impervious, orgMatterContent_pervious, &
+         PTF_lower66_5_constant, PTF_lower66_5_clay, PTF_lower66_5_Db, PTF_higher66_5_constant,              &
+         PTF_higher66_5_clay, PTF_higher66_5_Db, PTF_Ks_constant,                                            &
+         PTF_Ks_sand, PTF_Ks_clay, PTF_Ks_curveSlope,                                                        &
+         rootFractionCoefficient_forest, rootFractionCoefficient_impervious,                                 &
+         rootFractionCoefficient_pervious, infiltrationShapeFactor, jarvis_sm_threshold_c1
+    namelist/soilmoisture3/ orgMatterContent_forest, orgMatterContent_impervious, orgMatterContent_pervious, &
+         PTF_lower66_5_constant, PTF_lower66_5_clay, PTF_lower66_5_Db, PTF_higher66_5_constant,              &
+         PTF_higher66_5_clay, PTF_higher66_5_Db, PTF_Ks_constant,                                            &
+         PTF_Ks_sand, PTF_Ks_clay, PTF_Ks_curveSlope,                                                        &
+         rootFractionCoefficient_forest, rootFractionCoefficient_impervious,                                 &
+         rootFractionCoefficient_pervious, infiltrationShapeFactor, jarvis_sm_threshold_c1,                  &
+         rootFractionCoefficient_sand, rootFractionCoefficient_clay
+
+         namelist /directRunoff1/ imperviousStorageCapacity
     namelist /PET0/  minCorrectionFactorPET, maxCorrectionFactorPET, aspectTresholdPET
     ! Hargreaves-Samani
     namelist /PET1/  minCorrectionFactorPET, maxCorrectionFactorPET, aspectTresholdPET, HargreavesSamaniCoeff
@@ -569,22 +596,25 @@ CONTAINS
     !===============================================================
     call position_nml('optional_data', unamelist)
     read(unamelist, nml=optional_data)
+    ! soil moisture
     dirSoil_moisture = dir_Soil_moisture(1:nBasins)
     if ( nSoilHorizons_sm_input .GT. nSoilHorizons_mHM ) then
        call message()
        call message('***ERROR: Number of soil horizons representative for input soil moisture exceeded')
-       call message('          defined number of soil horizions: ', trim(num2str(maxNoSoilHorizons)),'!')
+       call message('          defined number of soil horizions: ', adjustl(trim(num2str(maxNoSoilHorizons))),'!')
        stop
     end if
+    ! neutrons
     dirNeutrons = dir_neutrons(1:nBasins)
     timeStep_neutrons_input = -1 ! daily, hard-coded, to be flexibilized
+    ! evapotranspiration
+    dirEvapotranspiration = dir_evapotranspiration(1:nBasins)
 
     !===============================================================
     ! Read evaluation basin average TWS data
     !===============================================================
     fileTWS = file_TWS (1:nBasins)
 
-    ! if (opti_function .EQ. 15) then !OROROR
     allocate(basin_avg_TWS_obs%basinId(nBasins)); basin_avg_TWS_obs%basinId = nodata_i4
     allocate(basin_avg_TWS_obs%fName  (nBasins)); basin_avg_TWS_obs%fName(:)= num2str(nodata_i4)
     
@@ -626,9 +656,9 @@ CONTAINS
           call message('***ERROR: Gridded LAI input in bin format must be daily.')
           stop
        end if
-       if (timeStep_LAI_input > 0) then
+       if (timeStep_LAI_input .GT. 1) then
           call message()
-          call message('***ERROR: timeStep_LAI_input must be <= 0.')
+          call message('***ERROR: option for selected timeStep_LAI_input not coded yet')
           stop
        end if
     end if
@@ -832,7 +862,8 @@ CONTAINS
 
     ! Process 3 - soilmoisture
     select case (processCase(3))
-       ! 1 - bucket approach, Brooks-Corey like
+    
+    ! 1 - Feddes equation for PET reduction, bucket approach, Brooks-Corey like
     case(1)
        call position_nml('soilmoisture1', unamelist_param)
        read(unamelist_param, nml=soilmoisture1)
@@ -883,6 +914,110 @@ CONTAINS
           stop
        end if
 
+    ! 2- Jarvis equation for PET reduction, bucket approach, Brooks-Corey like
+    case(2)
+       call position_nml('soilmoisture2', unamelist_param)
+       read(unamelist_param, nml=soilmoisture2)
+       processMatrix(3, 1) = processCase(3)
+       processMatrix(3, 2) = 18_i4
+       processMatrix(3, 3) = sum(processMatrix(1:3, 2))
+       call append(global_parameters, reshape(orgMatterContent_forest,     (/1, nColPars/)))
+       call append(global_parameters, reshape(orgMatterContent_impervious, (/1, nColPars/)))
+       call append(global_parameters, reshape(orgMatterContent_pervious,   (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_lower66_5_constant,      (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_lower66_5_clay,          (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_lower66_5_Db,            (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_higher66_5_constant,     (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_higher66_5_clay,         (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_higher66_5_Db,           (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_Ks_constant,             (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_Ks_sand,                 (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_Ks_clay,                 (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_Ks_curveSlope,           (/1, nColPars/)))
+       call append(global_parameters, reshape(rootFractionCoefficient_forest,     (/1, nColPars/)))
+       call append(global_parameters, reshape(rootFractionCoefficient_impervious, (/1, nColPars/)))
+       call append(global_parameters, reshape(rootFractionCoefficient_pervious,   (/1, nColPars/)))
+       call append(global_parameters, reshape(infiltrationShapeFactor,     (/1, nColPars/)))
+       call append(global_parameters, reshape(jarvis_sm_threshold_c1,      (/1, nColPars/)))
+
+       call append(global_parameters_name, (/     &
+            'orgMatterContent_forest           ', &
+            'orgMatterContent_impervious       ', &
+            'orgMatterContent_pervious         ', &
+            'PTF_lower66_5_constant            ', &
+            'PTF_lower66_5_clay                ', &
+            'PTF_lower66_5_Db                  ', &
+            'PTF_higher66_5_constant           ', &
+            'PTF_higher66_5_clay               ', &
+            'PTF_higher66_5_Db                 ', &
+            'PTF_Ks_constant                   ', &
+            'PTF_Ks_sand                       ', &
+            'PTF_Ks_clay                       ', &
+            'PTF_Ks_curveSlope                 ', &
+            'rootFractionCoefficient_forest    ', &
+            'rootFractionCoefficient_impervious', &
+            'rootFractionCoefficient_pervious  ', &
+            'infiltrationShapeFactor           ', &
+            'jarvis_sm_threshold_c1            '/))
+
+            
+    ! 3- Jarvis equation for ET reduction and FC dependency on root fraction coefficient
+    case(3)
+       call position_nml('soilmoisture3', unamelist_param)
+       read(unamelist_param, nml=soilmoisture3)
+       processMatrix(3, 1) = processCase(3)
+       processMatrix(3, 2) = 20_i4
+       processMatrix(3, 3) = sum(processMatrix(1:3, 2))
+       call append(global_parameters, reshape(orgMatterContent_forest,     (/1, nColPars/)))
+       call append(global_parameters, reshape(orgMatterContent_impervious, (/1, nColPars/)))
+       call append(global_parameters, reshape(orgMatterContent_pervious,   (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_lower66_5_constant,      (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_lower66_5_clay,          (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_lower66_5_Db,            (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_higher66_5_constant,     (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_higher66_5_clay,         (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_higher66_5_Db,           (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_Ks_constant,             (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_Ks_sand,                 (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_Ks_clay,                 (/1, nColPars/)))
+       call append(global_parameters, reshape(PTF_Ks_curveSlope,           (/1, nColPars/)))
+       call append(global_parameters, reshape(rootFractionCoefficient_forest,     (/1, nColPars/)))
+       call append(global_parameters, reshape(rootFractionCoefficient_impervious, (/1, nColPars/)))
+       call append(global_parameters, reshape(rootFractionCoefficient_pervious,   (/1, nColPars/)))
+       call append(global_parameters, reshape(infiltrationShapeFactor,     (/1, nColPars/)))
+       call append(global_parameters, reshape(rootFractionCoefficient_sand,      (/1, nColPars/)))
+       call append(global_parameters, reshape(rootFractionCoefficient_clay,      (/1, nColPars/)))
+       call append(global_parameters, reshape(jarvis_sm_threshold_c1,      (/1, nColPars/)))
+
+       call append(global_parameters_name, (/     &
+            'orgMatterContent_forest           ', &
+            'orgMatterContent_impervious       ', &
+            'orgMatterContent_pervious         ', &
+            'PTF_lower66_5_constant            ', &
+            'PTF_lower66_5_clay                ', &
+            'PTF_lower66_5_Db                  ', &
+            'PTF_higher66_5_constant           ', &
+            'PTF_higher66_5_clay               ', &
+            'PTF_higher66_5_Db                 ', &
+            'PTF_Ks_constant                   ', &
+            'PTF_Ks_sand                       ', &
+            'PTF_Ks_clay                       ', &
+            'PTF_Ks_curveSlope                 ', &
+            'rootFractionCoefficient_forest    ', &
+            'rootFractionCoefficient_impervious', &
+            'rootFractionCoefficient_pervious  ', &
+            'infiltrationShapeFactor           ', &
+            'rootFractionCoefficient_sand      ', &
+            'rootFractionCoefficient_clay      ', &      
+            'jarvis_sm_threshold_c1            '/))            
+            
+       ! check if parameter are in range
+       if ( .not. in_bound(global_parameters) ) then
+          call message('***ERROR: parameter in namelist "soilmoisture1" out of bound in ', &
+               trim(adjustl(file_namelist_param)))
+          stop
+       end if
+       
     case DEFAULT
        call message()
        call message('***ERROR: Process description for process "soilmoisture" does not exist!')

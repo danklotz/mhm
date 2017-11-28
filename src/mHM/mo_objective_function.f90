@@ -15,6 +15,7 @@
 !>               (15) SO: Q + TWS:  [1.0-KGE(Q)]*RMSE(basin_avg_TWS) - objective function using Q and basin average
 !>                                        (standard score) TWS\n
 !>               (17) SO: N:        1.0 - KGE of spatio-temporal neutron data, catchment-average \n
+!>               (27) SO: ET:       1.0 - KGE of catchment average evapotranspiration \n
 
 !> \authors Juliane Mai
 !> \date Dec 2012
@@ -114,9 +115,15 @@ CONTAINS
     case (15)
        ! KGE for Q * RMSE for basin_avg TWS (standarized scored)
        objective = objective_kge_q_rmse_tws(parameterset)
-   case (17)
+    case (17)
       ! KGE of catchment average SM
-      objective = objective_neutrons_kge_catchment_avg(parameterset)
+       objective = objective_neutrons_kge_catchment_avg(parameterset)
+    case (27)
+       ! KGE of catchment average ET
+       objective = objective_et_kge_catchment_avg(parameterset)
+    case (28)
+       !  KGE for Q + SSE for SM (standarized scored)
+       objective = objective_kge_q_sm_corr(parameterset)
     case default
        stop "Error objective: opti_function not implemented yet."
     end select
@@ -208,9 +215,11 @@ CONTAINS
     ! local
     integer(i4)                             :: iBasin                   ! basin loop counter
     integer(i4)                             :: iTime                    ! time loop counter
+    integer(i4)                             :: n_time_steps             ! number of time steps in simulated SM
     integer(i4)                             :: nrows1, ncols1           ! level 1 number of culomns and rows
     integer(i4)                             :: s1, e1                   ! start and end index for the current basin
     integer(i4)                             :: ncells1                  ! ncells1 of level 1
+    real(dp)                                :: invalid_times            ! number of invalid timesteps
     real(dp), parameter                     :: onesixth = 1.0_dp/6.0_dp ! for sixth root
     real(dp), dimension(:),   allocatable   :: sm_catch_avg_basin       ! spatial average of observed soil moisture
     real(dp), dimension(:),   allocatable   :: sm_opti_catch_avg_basin  ! spatial avergae of modeled  soil moisture
@@ -239,13 +248,15 @@ CONTAINS
        sm_catch_avg_basin      = nodata_dp
        sm_opti_catch_avg_basin = nodata_dp
 
+       invalid_times = 0.0_dp
        ! calculate catchment average soil moisture
-       do iTime = 1, size(sm_opti, dim=2)
+       n_time_steps = size(sm_opti, dim=2)
+       do iTime = 1, n_time_steps
 
-          ! check for enough data points in time for correlation
-          if ( all(.NOT. L1_sm_mask(:,iTime)) .OR. (count(L1_sm_mask(:,iTime)) .LE. 10) ) then
-             call message('WARNING: objective_sm_kge_catchment_avg: ignored currrent time step since less than')
-             call message('         10 valid cells available in soil moisture observation')
+          ! check for enough data points in timesteps for KGE calculation
+          ! more then 10 percent avaiable in current field
+          if ( count(L1_sm_mask(s1:e1,iTime)) .LE. (0.10_dp * real(nCells1,dp)) ) then
+             invalid_times = invalid_times + 1.0_dp
              mask_times(iTime) = .FALSE.
              cycle
           end if
@@ -253,10 +264,23 @@ CONTAINS
           sm_opti_catch_avg_basin(iTime) = average(sm_opti(s1:e1,iTime), mask=L1_sm_mask(s1:e1,iTime))
        end do
 
+       ! user information about invalid times
+       if (invalid_times .GT. 0.5_dp) then
+          call message('   WARNING: objective_sm: Detected invalid timesteps (.LT. 10 valid data points).')
+          call message('                          Fraction of invlauid timestpes: ', &
+                                                  num2str(invalid_times/real(n_time_steps,dp),'(F4.2)'))
+       end if
+
+       
        ! calculate average soil moisture KGE over all basins with power law
        ! basins are weighted equally ( 1 / real(nBasin,dp))**6
        objective_sm_kge_catchment_avg = objective_sm_kge_catchment_avg + &
             ( (1.0_dp-KGE(sm_catch_avg_basin, sm_opti_catch_avg_basin, mask=mask_times)) / real(nBasins,dp) )**6
+       
+       ! deallocate
+       deallocate(mask_times             )
+       deallocate(sm_catch_avg_basin     )
+       deallocate(sm_opti_catch_avg_basin)
     end do
 
     objective_sm_kge_catchment_avg = objective_sm_kge_catchment_avg**onesixth
@@ -354,11 +378,12 @@ CONTAINS
     integer(i4)                             :: iCell              ! cell loop counter
     integer(i4)                             :: nrows1, ncols1     ! level 1 number of culomns and rows
     integer(i4)                             :: s1, e1             ! start and end index for the current basin
-    integer(i4)                             :: ncells1                 ! ncells1 of level 1
+    integer(i4)                             :: ncells1            ! ncells1 of level 1
+    real(dp)                                :: invalid_cells      ! number of invalid cells in catchment
     real(dp)                                :: objective_sm_corr_basin ! basins wise objectives
     real(dp), parameter                     :: onesixth = 1.0_dp/6.0_dp
-    real(dp), dimension(:,:), allocatable   :: sm_opti                 ! simulated soil moisture
-    !                                                                  ! (dim1=ncells, dim2=time)
+    real(dp), dimension(:,:), allocatable   :: sm_opti            ! simulated soil moisture
+    !                                                             ! (dim1=ncells, dim2=time)
 
     call mhm_eval(parameterset, sm_opti=sm_opti)
 
@@ -373,18 +398,27 @@ CONTAINS
        ! get basin information
        call get_basin_info( iBasin, 1, nrows1, ncols1, nCells=nCells1, iStart=s1,  iEnd=e1 )
 
+       invalid_cells = 0.0_dp
        ! temporal correlation is calculated on individual gridd cells
+       
        do iCell = s1, e1
 
           ! check for enough data points in time for correlation
-          if ( all(.NOT. L1_sm_mask(iCell,:)) .OR. (count(L1_sm_mask(iCell,:)) .LE. 10) ) then
-             call message('WARNING: objective_sm_corr: ignored currrent cell since less than 10 time steps')
-             call message('         available in soil moisture observation')
+          if ( count(L1_sm_mask(iCell,:)) .LE. 0.10_dp * real( size(L1_sm, dim=2) ,dp) ) then
+             invalid_cells = invalid_cells + 1.0_dp
              cycle
           end if
           objective_sm_corr_basin = objective_sm_corr_basin + &
                correlation( L1_sm(iCell,:), sm_opti(iCell,:), mask=L1_sm_mask(iCell,:))
        end do
+
+       ! user information about invalid cells
+       if (invalid_cells .GT. 0.5_dp) then
+          call message('   WARNING: objective_sm: Detected invalid cells in study area (.LT. 10 valid data points).')
+          call message('                          Fraction of invlauid cells: ', &
+                                                  num2str(invalid_cells/real(nCells1,dp),'(F4.2)'))
+       end if
+
 
        ! calculate average soil moisture correlation over all basins with power law
        ! basins are weighted equally ( 1 / real(nBasin,dp))**6
@@ -521,7 +555,7 @@ CONTAINS
        mask_times              = .FALSE.
        pd_time_series          = 0.0_dp
 
-       ! calculate catchment average soil moisture
+       ! calculate pattern similarity criterion
        do iTime = 1, size(sm_opti, dim=2)
           mat1    = unpack(     L1_sm(s1:e1,iTime), mask1, nodata_dp)
           mat2    = unpack(   sm_opti(s1:e1,iTime), mask1, nodata_dp)
@@ -531,13 +565,19 @@ CONTAINS
 
        if (count(mask_times) > 0_i4) then
           ! calculate avergae PD over all basins with power law -basins are weighted equally ( 1 / real(nBasin,dp))**6
-          ! print*, 'PD(SM)', sum(pd_time_series, mask=mask_times) / real(count(mask_times), dp) ! MZMZMZMZ
           objective_sm_pd = objective_sm_pd + &
                ((1.0_dp - sum(pd_time_series, mask=mask_times) / real(count(mask_times), dp)) / real(nBasins,dp) )**6
        else
           call message('***ERROR: mo_objective_funtion: objective_sm_pd: No soil moisture observations available!')
           stop
        end if
+
+       ! deallocate
+       deallocate(mask_times    )
+       deallocate(pd_time_series)
+       deallocate(mat1   )
+       deallocate(mat2   )
+       deallocate(mask_sm)
     end do
 
     objective_sm_pd = objective_sm_pd**onesixth
@@ -632,6 +672,7 @@ CONTAINS
     integer(i4)                              :: nrows1, ncols1     ! level 1 number of culomns and rows
     integer(i4)                              :: s1, e1             ! start and end index for the current basin
     integer(i4)                              :: ncells1            ! ncells1 of level 1
+    real(dp)                                 :: invalid_cells      ! number of invalid cells in catchment
     real(dp)                                 :: objective_sm_sse_standard_score_basin ! basins wise objectives
     real(dp),    parameter                   :: onesixth = 1.0_dp/6.0_dp
     real(dp),    dimension(:,:), allocatable :: sm_opti                 ! simulated soil moisture
@@ -650,13 +691,13 @@ CONTAINS
        ! get basin information
        call get_basin_info( iBasin, 1, nrows1, ncols1, nCells=nCells1, iStart=s1,  iEnd=e1 )
 
+       invalid_cells = 0.0_dp
        ! standard_score signal is calculated on individual grid cells
        do iCell = s1, e1
 
           ! check for enough data points in time for statistical calculations (e.g. mean, stddev)
-          if ( all(.NOT. L1_sm_mask(iCell,:)) .OR. (count(L1_sm_mask(iCell,:)) .LE. 10) ) then
-             call message('WARNING: objective_sm_sse_standard_score: ignored currrent cell since less than 10 time steps')
-             call message('         available in soil moisture observation')
+          if ( count(L1_sm_mask(iCell,:)) .LE. (0.10_dp * real(size(L1_sm, dim=2) ,dp)) ) then
+             invalid_cells = invalid_cells + 1.0_dp
              cycle
           end if
           objective_sm_sse_standard_score_basin = objective_sm_sse_standard_score_basin + &
@@ -664,7 +705,14 @@ CONTAINS
                standard_score(sm_opti(iCell,:), mask=L1_sm_mask(iCell,:)), mask=L1_sm_mask(iCell,:))
 
        end do
-       ! print*, iBasin,  objective_sm_sse_standard_score_basin
+
+       ! user information about invalid cells
+       if (invalid_cells .GT. 0.5_dp) then
+          call message('   WARNING: objective_sm: Detected invalid cells in study area (.LT. 10 valid data points).')
+          call message('                          Fraction of invlauid cells: ', &
+                                                  num2str(invalid_cells/real(nCells1,dp),'(F4.2)'))
+       end if
+
        ! calculate average soil moisture correlation over all basins with power law
        ! basins are weighted equally ( 1 / real(nBasin,dp))**6
        objective_sm_sse_standard_score = objective_sm_sse_standard_score + &
@@ -908,11 +956,486 @@ CONTAINS
 
   END FUNCTION objective_kge_q_rmse_tws
 
-  ! ==================================================================
-  ! PRIVATE ROUTINES =================================================
-  ! ==================================================================
+  ! ------------------------------------------------------------------
+
+  !      NAME
+  !          objective_neutrons_kge_catchment_avg
+
+  !>        \brief Objective function for neutrons.
+
+  !>        \details The objective function only depends on a parameter vector.
+  !>                 The model will be called with that parameter vector and
+  !>                 the model output is subsequently compared to observed data.\n
+  !>
+  !>                 Therefore, the Kling-Gupta model efficiency \f$ KGE \f$ of the catchment average
+  !>                       neutrons (N) is calculated
+  !>                       \f[ KGE = 1.0 - \sqrt{( (1-r)^2 + (1-\alpha)^2 + (1-\beta)^2 )} \f]
+  !>                 where \n
+  !>                       \f$ r \f$ = Pearson product-moment correlation coefficient \n
+  !>                       \f$ \alpha \f$ = ratio of simulated mean to observed mean SM \n
+  !>                       \f$ \beta  \f$ = ratio of similated standard deviation to observed standard deviation \n
+  !>                 is calculated and the objective function for a given basin \f$ i \f$ is
+  !>                       \f[ \phi_{i} = 1.0 - KGE_{i} \f]
+  !>                 \f$ \phi_{i} \f$ is the objective since we always apply minimization methods.
+  !>                 The minimal value of \f$ \phi_{i} \f$ is 0 for the optimal KGE of 1.0.\n
+  !>
+  !>                 Finally, the overall objective function value \f$ OF \f$ is estimated based on the power-6
+  !>                 norm to combine the \f$ \phi_{i} \f$ from all basins \f$ N \f$.
+  !>                 \f[ OF = \sqrt[6]{\sum((1.0 - KGE_{i})/N)^6 }.  \f] \n
+  !>                 The observed data L1_neutronsdata, L1_neutronsdata_mask are global in this module.
+
+  !     INTENT(IN)
+  !>        \param[in] "real(dp) :: parameterset(:)"        1D-array with parameters the model is run with
+
+  !     INTENT(INOUT)
+  !         None
+
+  !     INTENT(OUT)
+  !         None
+
+  !     INTENT(IN), OPTIONAL
+  !         None
+
+  !     INTENT(INOUT), OPTIONAL
+  !         None
+
+  !     INTENT(OUT), OPTIONAL
+  !         None
+
+  !     RETURN
+  !>       \return     real(dp) :: objective_neutrons_kge_catchment_avg &mdash; objective function value
+  !>       (which will be e.g. minimized by an optimization routine)
+
+  !     RESTRICTIONS
+  !>       \note Input values must be floating points. \n
+
+  !     EXAMPLE
+  !         para = (/ 1., 2, 3., -999., 5., 6. /)
+  !         obj_value = objective_neutrons_kge_catchment_avg(para)
+
+  !     LITERATURE
+  !         none
+
+  !     HISTORY
+  !>        \author  Martin Schroen
+  !>        \date    Jun 2015
+
+  FUNCTION objective_neutrons_kge_catchment_avg(parameterset)
+
+    use mo_init_states,      only : get_basin_info
+    use mo_mhm_eval,         only : mhm_eval
+    use mo_message,          only : message
+    use mo_moment,           only : average
+    use mo_errormeasures,    only : KGE
+    use mo_string_utils,     only : num2str
+    !
+    use mo_global_variables, only: nBasins,             & ! number of basins
+         L1_neutronsdata, L1_neutronsdata_mask      ! packed measured neutrons, neutrons-mask (dim1=ncells, dim2=time)
+    use mo_mhm_constants,    only: nodata_dp              ! global nodata value
+
+    implicit none
+
+    real(dp), dimension(:), intent(in)      :: parameterset
+    real(dp)                                :: objective_neutrons_kge_catchment_avg
+
+    ! local
+    integer(i4)                             :: iBasin                   ! basin loop counter
+    integer(i4)                             :: iTime                    ! time loop counter
+    integer(i4)                             :: nrows1, ncols1           ! level 1 number of culomns and rows
+    integer(i4)                             :: s1, e1                   ! start and end index for the current basin
+    integer(i4)                             :: ncells1                  ! ncells1 of level 1
+    real(dp), parameter                     :: onesixth = 1.0_dp/6.0_dp ! for sixth root
+    real(dp), dimension(:),   allocatable   :: neutrons_catch_avg_basin       ! spatial average of observed neutrons
+    real(dp), dimension(:),   allocatable   :: neutrons_opti_catch_avg_basin  ! spatial avergae of modeled  neutrons
+    real(dp), dimension(:,:), allocatable   :: neutrons_opti                  ! simulated neutrons
+    !                                                                   ! (dim1=ncells, dim2=time)
+    logical,  dimension(:),   allocatable   :: mask_times               ! mask for valid neutrons catchment avg time steps
+
+    call mhm_eval(parameterset, neutrons_opti=neutrons_opti)
+
+    ! initialize some variables
+    objective_neutrons_kge_catchment_avg = 0.0_dp
+
+    ! loop over basin - for applying power law later on
+    do iBasin=1, nBasins
+
+       ! get basin information
+       call get_basin_info( iBasin, 1, nrows1, ncols1, nCells=nCells1, iStart=s1,  iEnd=e1 )
+
+       ! allocate
+       allocate(mask_times             (size(neutrons_opti, dim=2)))
+       allocate(neutrons_catch_avg_basin     (size(neutrons_opti, dim=2)))
+       allocate(neutrons_opti_catch_avg_basin(size(neutrons_opti, dim=2)))
+
+       ! initalize
+       mask_times              = .TRUE.
+       neutrons_catch_avg_basin      = nodata_dp
+       neutrons_opti_catch_avg_basin = nodata_dp
+
+       ! calculate catchment average soil moisture
+       do iTime = 1, size(neutrons_opti, dim=2)
+
+          ! check for enough data points in time for correlation
+          if ( all(.NOT. L1_neutronsdata_mask(s1:e1,iTime))) then
+              call message('WARNING: neutrons data at time ', num2str(iTime, 'i10'), ' is empty.')
+             !call message('WARNING: objective_neutrons_kge_catchment_avg: ignored currrent time step since less than')
+             !call message('         10 valid cells available in soil moisture observation')
+             mask_times(iTime) = .FALSE.
+             cycle
+          end if
+          neutrons_catch_avg_basin(iTime)      = average(  L1_neutronsdata(s1:e1,iTime), mask=L1_neutronsdata_mask(s1:e1,iTime))
+          neutrons_opti_catch_avg_basin(iTime) = average(neutrons_opti(s1:e1,iTime), mask=L1_neutronsdata_mask(s1:e1,iTime))
+       end do
+
+       ! calculate average neutrons KGE over all basins with power law
+       ! basins are weighted equally ( 1 / real(nBasin,dp))**6
+       objective_neutrons_kge_catchment_avg = objective_neutrons_kge_catchment_avg + &
+            ( (1.0_dp-KGE(neutrons_catch_avg_basin, neutrons_opti_catch_avg_basin, mask=mask_times)) / real(nBasins,dp) )**6
+       
+       ! deallocate
+       deallocate(mask_times              )
+       deallocate(neutrons_catch_avg_basin)
+       deallocate(neutrons_opti_catch_avg_basin)
+
+    end do
+
+    objective_neutrons_kge_catchment_avg = objective_neutrons_kge_catchment_avg**onesixth
+
+    call message('    objective_neutrons_kge_catchment_avg = ', num2str(objective_neutrons_kge_catchment_avg,'(F9.5)'))
+
+  END FUNCTION objective_neutrons_kge_catchment_avg
+  
+  ! ------------------------------------------------------------------
+
+  !      NAME
+  !          objective_et_kge_catchment_avg
+
+  !>        \brief Objective function for evpotranspirstion (et).
+
+  !>        \details The objective function only depends on a parameter vector.
+  !>                 The model will be called with that parameter vector and
+  !>                 the model output is subsequently compared to observed data.\n
+  !>
+  !>                 Therefore, the Kling-Gupta model efficiency \f$ KGE \f$ of the catchment average
+  !>                       evapotranspiration (et) is calculated
+  !>                       \f[ KGE = 1.0 - \sqrt{( (1-r)^2 + (1-\alpha)^2 + (1-\beta)^2 )} \f]
+  !>                 where \n
+  !>                       \f$ r \f$ = Pearson product-moment correlation coefficient \n
+  !>                       \f$ \alpha \f$ = ratio of simulated mean to observed mean SM \n
+  !>                       \f$ \beta  \f$ = ratio of similated standard deviation to observed standard deviation \n
+  !>                 is calculated and the objective function for a given basin \f$ i \f$ is
+  !>                       \f[ \phi_{i} = 1.0 - KGE_{i} \f]
+  !>                 \f$ \phi_{i} \f$ is the objective since we always apply minimization methods.
+  !>                 The minimal value of \f$ \phi_{i} \f$ is 0 for the optimal KGE of 1.0.\n
+  !>
+  !>                 Finally, the overall objective function value \f$ OF \f$ is estimated based on the power-6
+  !>                 norm to combine the \f$ \phi_{i} \f$ from all basins \f$ N \f$.
+  !>                 \f[ OF = \sqrt[6]{\sum((1.0 - KGE_{i})/N)^6 }.  \f] \n
+  !>                 The observed data L1_et, L1_et_mask are global in this module.
+
+  !     INTENT(IN)
+  !>        \param[in] "real(dp) :: parameterset(:)"        1D-array with parameters the model is run with
+
+  !     INTENT(INOUT)
+  !         None
+
+  !     INTENT(OUT)
+  !         None
+
+  !     INTENT(IN), OPTIONAL
+  !         None
+
+  !     INTENT(INOUT), OPTIONAL
+  !         None
+
+  !     INTENT(OUT), OPTIONAL
+  !         None
+
+  !     RETURN
+  !>       \return     real(dp) :: objective_et_kge_catchment_avg &mdash; objective function value
+  !>       (which will be e.g. minimized by an optimization routine)
+
+  !     RESTRICTIONS
+  !>       \note Input values must be floating points. \n
+
+  !     EXAMPLE
+  !         para = (/ 1., 2, 3., -999., 5., 6. /)
+  !         obj_value = objective_et_kge_catchment_avg(para)
+
+  !     LITERATURE
+  !         none
+
+  !     HISTORY
+  !>        \author  Johannes Brenner
+  !>        \date    Feb 2017
+
+  FUNCTION objective_et_kge_catchment_avg(parameterset)
+
+    use mo_init_states,      only : get_basin_info
+    use mo_mhm_eval,         only : mhm_eval
+    use mo_message,          only : message
+    use mo_moment,           only : average
+    use mo_errormeasures,    only : KGE
+    use mo_string_utils,     only : num2str
+    !
+    use mo_global_variables, only: nBasins,             & ! number of basins
+                                   L1_et, L1_et_mask      ! packed measured et, et-mask (dim1=ncells, dim2=time)
+    use mo_mhm_constants,    only: nodata_dp              ! global nodata value
+
+    implicit none
+
+    real(dp), dimension(:), intent(in)      :: parameterset
+    real(dp)                                :: objective_et_kge_catchment_avg
+
+    ! local
+    integer(i4)                             :: iBasin                   ! basin loop counter
+    integer(i4)                             :: iTime                    ! time loop counter
+    integer(i4)                             :: nrows1, ncols1           ! level 1 number of culomns and rows
+    integer(i4)                             :: s1, e1                   ! start and end index for the current basin
+    integer(i4)                             :: ncells1                  ! ncells1 of level 1
+    real(dp), parameter                     :: onesixth = 1.0_dp/6.0_dp ! for sixth root
+    real(dp), dimension(:),   allocatable   :: et_catch_avg_basin       ! spatial average of observed et
+    real(dp), dimension(:),   allocatable   :: et_opti_catch_avg_basin  ! spatial avergae of modeled  et
+    real(dp), dimension(:,:), allocatable   :: et_opti                  ! simulated et
+    !                                                                   ! (dim1=ncells, dim2=time)
+    logical,  dimension(:),   allocatable   :: mask_times               ! mask for valid et catchment avg time steps
+
+    call mhm_eval(parameterset, et_opti=et_opti)
+
+    ! initialize some variables
+    objective_et_kge_catchment_avg = 0.0_dp
+
+    ! loop over basin - for applying power law later on
+    do iBasin=1, nBasins
+
+       ! get basin information
+       call get_basin_info( iBasin, 1, nrows1, ncols1, nCells=nCells1, iStart=s1,  iEnd=e1 )
+
+       ! allocate
+       allocate(mask_times             (size(et_opti, dim=2)))
+       allocate(et_catch_avg_basin     (size(et_opti, dim=2)))
+       allocate(et_opti_catch_avg_basin(size(et_opti, dim=2)))
+
+       ! initalize
+       mask_times              = .TRUE.
+       et_catch_avg_basin      = nodata_dp
+       et_opti_catch_avg_basin = nodata_dp
+       
+       ! calculate catchment average soil moisture
+       do iTime = 1, size(et_opti, dim=2)
+
+          ! check for enough data points in time for correlation
+          if ( all(.NOT. L1_et_mask(s1:e1,iTime))) then
+             !write (*,*) 'WARNING: et data at time ', iTime, ' is empty.'
+             !call message('WARNING: objective_et_kge_catchment_avg: ignored currrent time step since less than')
+             !call message('         10 valid cells available in evapotranspiration observation')
+             mask_times(iTime) = .FALSE.
+             cycle
+          end if
+
+          et_catch_avg_basin(iTime)      = average(  L1_et(s1:e1,iTime), mask=L1_et_mask(s1:e1,iTime))
+          et_opti_catch_avg_basin(iTime) = average(et_opti(s1:e1,iTime), mask=L1_et_mask(s1:e1,iTime))
+       end do
+       
+       ! calculate average ET KGE over all basins with power law
+       ! basins are weighted equally ( 1 / real(nBasin,dp))**6
+       
+       objective_et_kge_catchment_avg = objective_et_kge_catchment_avg + &
+            ( (1.0_dp-KGE(et_catch_avg_basin, et_opti_catch_avg_basin, mask=mask_times)) / real(nBasins,dp) )**6
+       
+       ! deallocate
+       deallocate(mask_times             )
+       deallocate(et_catch_avg_basin     )
+       deallocate(et_opti_catch_avg_basin)
+    end do
+
+    objective_et_kge_catchment_avg = objective_et_kge_catchment_avg**onesixth
+
+    call message('    objective_et_kge_catchment_avg = ', num2str(objective_et_kge_catchment_avg,'(F9.5)'))
+
+  END FUNCTION objective_et_kge_catchment_avg
+
+  ! -----------------------------------------------------------------
+
+  !      NAME
+  !          objective_kge_q_sse_sm(parameterset)
+
+  !>        \brief Objective function of KGE for runoff and correlation for SM
+
+  !>        \details Objective function of KGE for runoff and SSE for soil moisture (standarized scores).
+  !>                 Further details can be found in the documentation of objective functions
+  !>                 '14 - objective_multiple_gauges_kge_power6' and '13 - objective_sm_corr'.
+
+  !     INTENT(IN)
+  !>        \param[in] "real(dp) :: parameterset(:)"        1D-array with parameters the model is run with
+
+  !     INTENT(INOUT)
+  !         None
+
+  !     INTENT(OUT)
+  !         None
+
+  !     INTENT(IN), OPTIONAL
+  !         None
+
+  !     INTENT(INOUT), OPTIONAL
+  !         None
+
+  !     INTENT(OUT), OPTIONAL
+  !         None
+
+  !     RETURN
+  !>       \return     real(dp) :: objective_kge_q_sse_sm &mdash; objective function value
+  !>       (which will be e.g. minimized by an optimization routine like DDS)
+
+  !     RESTRICTIONS
+  !>       \note Input values must be floating points. \n
+
+  !     EXAMPLE
+  !         para = (/ 1., 2, 3., -999., 5., 6. /)
+  !         obj_value = objective_kge_q_sse_sm(parameterset)
+
+  !     LITERATURE
+  !         None
+
+  !     HISTORY
+  !>        \author Matthias Zink
+  !>        \date Mar. 2017
+
+  FUNCTION objective_kge_q_sm_corr(parameterset)
+
+    use mo_init_states,          only: get_basin_info
+    use mo_mhm_eval,             only: mhm_eval
+    use mo_errormeasures,        only: kge !, sse, rmse ! MZMZMZMZ
+    use mo_moment,               only: correlation ! mean ! MZMZMZMZ
+    use mo_message,              only: message
+    ! use mo_standard_score,       only: standard_score ! MZMZMZM
+    use mo_string_utils,         only: num2str
+    use mo_global_variables,     only: nBasins,             &
+                                       L1_sm, L1_sm_mask      ! packed measured sm, sm-mask (dim1=ncells, dim2=time)
+#ifdef MRM2MHM
+    use mo_mrm_objective_function_runoff, only: extract_runoff
+#endif
+
+    implicit none
+
+    real(dp), dimension(:), intent(in)    :: parameterset
+    real(dp)                              :: objective_kge_q_sm_corr
+
+    ! local
+    real(dp)                              :: objective_sm
+    real(dp)                              :: objective_kge
+    real(dp)                              :: invalid_cells            ! number of invalid cells in catchment
+    real(dp), allocatable, dimension(:,:) :: runoff                   ! modelled runoff for a given parameter set
+    !                                                                 ! dim1=nTimeSteps, dim2=nGauges
+    integer(i4)                           :: gg                       ! gauges counter
+    integer(i4)                           :: nGaugesTotal
+    integer(i4)                           :: iBasin             ! basin loop counter
+    integer(i4)                           :: iCell              ! cell loop counter
+    integer(i4)                           :: nrows1, ncols1     ! level 1 number of culomns and rows
+    integer(i4)                           :: s1, e1             ! start and end index for the current basin
+    integer(i4)                           :: ncells1            ! ncells1 of level 1
+    real(dp)                              :: objective_sm_basin ! basins wise objectives
+    ! runoff
+    real(dp), dimension(:),   allocatable :: runoff_agg               ! aggregated simulated runoff
+    real(dp), dimension(:),   allocatable :: runoff_obs               ! measured runoff
+    logical,  dimension(:),   allocatable :: runoff_obs_mask          ! mask for measured runoff
+    ! SM
+    real(dp), dimension(:,:), allocatable :: sm_opti                 ! simulated soil moisture
+    !                                                                  ! (dim1=ncells, dim2=time)
+    
+    real(dp),    parameter                   :: onesixth = 1.0_dp/6.0_dp
+
+    ! run mHM
+    call mHM_eval(parameterset, runoff=runoff, sm_opti=sm_opti)
+
+    ! -----------------------------
+    ! SOIL MOISTURE
+    ! -----------------------------
+    
+    ! initialize some variables
+    objective_sm          = 0.0_dp
+
+    ! loop over basin - for applying power law later on
+    do iBasin = 1, nBasins
+
+       ! init
+       objective_sm_basin = 0.0_dp
+       ! get basin information
+       call get_basin_info( iBasin, 1, nrows1, ncols1, nCells=nCells1, iStart=s1,  iEnd=e1 )
+
+       ! correlation signal is calculated on individual grid cells
+       invalid_cells = 0.0_dp
+       do iCell = s1, e1
+
+          ! check for enough data points in time for statistical calculations (e.g. mean, stddev)
+          if ( count(L1_sm_mask(iCell,:)) .LE. (0.10_dp * real(size(L1_sm, dim=2) ,dp)) ) then
+             invalid_cells = invalid_cells + 1.0_dp
+             cycle
+          end if
+
+          ! calculate ojective function
+          objective_sm_basin = objective_sm_basin + &
+               correlation( L1_sm(iCell,:), sm_opti(iCell,:), mask=L1_sm_mask(iCell,:))
+       end do
+
+       ! user information about invalid cells
+       if (invalid_cells .GT. 0.5_dp) then
+          call message('   WARNING: objective_sm: Detected invalid cells in study area (.LT. 10 valid data points).')
+          call message('                          Fraction of invlauid cells: ', &
+                                                  num2str(invalid_cells/real(nCells1,dp),'(F4.2)'))
+       end if
+
+       ! calculate average soil moisture objective over all basins with power law
+       ! basins are weighted equally ( 1 / real(nBasin,dp))**6
+       objective_sm = objective_sm + &
+            ( (1.0_dp - objective_sm_basin / real(nCells1,dp)) / real(nBasins,dp) )**6
+    end do
+
+    ! compromise solution - sixth root
+    objective_sm = objective_sm**onesixth
+
+    ! -----------------------------
+    ! RUNOFF
+    ! -----------------------------
+#ifdef MRM2MHM
+    nGaugesTotal = size(runoff, dim=2)
+
+    objective_kge = 0.0_dp
+    do gg=1, nGaugesTotal
+
+       ! extract runoff
+       call extract_runoff( gg, runoff, runoff_agg, runoff_obs, runoff_obs_mask )
+
+       ! KGE
+       objective_kge = objective_kge + &
+            ( (1.0_dp - kge(runoff_obs, runoff_agg, mask=runoff_obs_mask) )/ real(nGaugesTotal,dp) )**6
+
+    end do
+
+    deallocate( runoff_agg, runoff_obs, runoff_obs_mask )
+    
+    ! compromise solution - sixth root
+    objective_kge = objective_kge**onesixth 
+
+#else
+    call message('***ERROR: objective_kge_q_rmse_tws: missing routing module for optimization')
+    stop
+#endif
+
+    ! equal weighted compromise objective functions for discharge and soilmoisture
+    objective_kge_q_sm_corr = (objective_sm**6 + objective_kge**6 )**onesixth
+!    print*, "1-SM 2-Q : ", 1.0_dp-objective_sm, 1.0_dp-objective_kge ! MZMZMZMZ
+    
+    call message('    objective_kge_q_sm_corr = ', num2str(objective_kge_q_sm_corr,'(F9.5)'))
+
+  END FUNCTION objective_kge_q_sm_corr
 
 
+
+
+  
+  
   ! ------------------------------------------------------------------
 
   ! NAME
@@ -1042,148 +1565,5 @@ CONTAINS
     deallocate( dummy )
 
   end subroutine extract_basin_avg_tws
-
-  ! ------------------------------------------------------------------
-
-  !      NAME
-  !          objective_neutrons_kge_catchment_avg
-
-  !>        \brief Objective function for neutrons.
-
-  !>        \details The objective function only depends on a parameter vector.
-  !>                 The model will be called with that parameter vector and
-  !>                 the model output is subsequently compared to observed data.\n
-  !>
-  !>                 Therefore, the Kling-Gupta model efficiency \f$ KGE \f$ of the catchment average
-  !>                       neutrons (N) is calculated
-  !>                       \f[ KGE = 1.0 - \sqrt{( (1-r)^2 + (1-\alpha)^2 + (1-\beta)^2 )} \f]
-  !>                 where \n
-  !>                       \f$ r \f$ = Pearson product-moment correlation coefficient \n
-  !>                       \f$ \alpha \f$ = ratio of simulated mean to observed mean SM \n
-  !>                       \f$ \beta  \f$ = ratio of similated standard deviation to observed standard deviation \n
-  !>                 is calculated and the objective function for a given basin \f$ i \f$ is
-  !>                       \f[ \phi_{i} = 1.0 - KGE_{i} \f]
-  !>                 \f$ \phi_{i} \f$ is the objective since we always apply minimization methods.
-  !>                 The minimal value of \f$ \phi_{i} \f$ is 0 for the optimal KGE of 1.0.\n
-  !>
-  !>                 Finally, the overall objective function value \f$ OF \f$ is estimated based on the power-6
-  !>                 norm to combine the \f$ \phi_{i} \f$ from all basins \f$ N \f$.
-  !>                 \f[ OF = \sqrt[6]{\sum((1.0 - KGE_{i})/N)^6 }.  \f] \n
-  !>                 The observed data L1_neutronsdata, L1_neutronsdata_mask are global in this module.
-
-  !     INTENT(IN)
-  !>        \param[in] "real(dp) :: parameterset(:)"        1D-array with parameters the model is run with
-
-  !     INTENT(INOUT)
-  !         None
-
-  !     INTENT(OUT)
-  !         None
-
-  !     INTENT(IN), OPTIONAL
-  !         None
-
-  !     INTENT(INOUT), OPTIONAL
-  !         None
-
-  !     INTENT(OUT), OPTIONAL
-  !         None
-
-  !     RETURN
-  !>       \return     real(dp) :: objective_neutrons_kge_catchment_avg &mdash; objective function value
-  !>       (which will be e.g. minimized by an optimization routine)
-
-  !     RESTRICTIONS
-  !>       \note Input values must be floating points. \n
-
-  !     EXAMPLE
-  !         para = (/ 1., 2, 3., -999., 5., 6. /)
-  !         obj_value = objective_neutrons_kge_catchment_avg(para)
-
-  !     LITERATURE
-  !         none
-
-  !     HISTORY
-  !>        \author  Martin Schroen
-  !>        \date    Jun 2015
-
-  FUNCTION objective_neutrons_kge_catchment_avg(parameterset)
-
-    use mo_init_states,      only : get_basin_info
-    use mo_mhm_eval,         only : mhm_eval
-    use mo_message,          only : message
-    use mo_moment,           only : average
-    use mo_errormeasures,    only : KGE
-    use mo_string_utils,     only : num2str
-    !
-    use mo_global_variables, only: nBasins,             & ! number of basins
-         L1_neutronsdata, L1_neutronsdata_mask      ! packed measured neutrons, neutrons-mask (dim1=ncells, dim2=time)
-    use mo_mhm_constants,    only: nodata_dp              ! global nodata value
-
-    implicit none
-
-    real(dp), dimension(:), intent(in)      :: parameterset
-    real(dp)                                :: objective_neutrons_kge_catchment_avg
-
-    ! local
-    integer(i4)                             :: iBasin                   ! basin loop counter
-    integer(i4)                             :: iTime                    ! time loop counter
-    integer(i4)                             :: nrows1, ncols1           ! level 1 number of culomns and rows
-    integer(i4)                             :: s1, e1                   ! start and end index for the current basin
-    integer(i4)                             :: ncells1                  ! ncells1 of level 1
-    real(dp), parameter                     :: onesixth = 1.0_dp/6.0_dp ! for sixth root
-    real(dp), dimension(:),   allocatable   :: neutrons_catch_avg_basin       ! spatial average of observed neutrons
-    real(dp), dimension(:),   allocatable   :: neutrons_opti_catch_avg_basin  ! spatial avergae of modeled  neutrons
-    real(dp), dimension(:,:), allocatable   :: neutrons_opti                  ! simulated neutrons
-    !                                                                   ! (dim1=ncells, dim2=time)
-    logical,  dimension(:),   allocatable   :: mask_times               ! mask for valid neutrons catchment avg time steps
-
-    call mhm_eval(parameterset, neutrons_opti=neutrons_opti)
-
-    ! initialize some variables
-    objective_neutrons_kge_catchment_avg = 0.0_dp
-
-    ! loop over basin - for applying power law later on
-    do iBasin=1, nBasins
-
-       ! get basin information
-       call get_basin_info( iBasin, 1, nrows1, ncols1, nCells=nCells1, iStart=s1,  iEnd=e1 )
-
-       ! allocate
-       allocate(mask_times             (size(neutrons_opti, dim=2)))
-       allocate(neutrons_catch_avg_basin     (size(neutrons_opti, dim=2)))
-       allocate(neutrons_opti_catch_avg_basin(size(neutrons_opti, dim=2)))
-
-       ! initalize
-       mask_times              = .TRUE.
-       neutrons_catch_avg_basin      = nodata_dp
-       neutrons_opti_catch_avg_basin = nodata_dp
-
-       ! calculate catchment average soil moisture
-       do iTime = 1, size(neutrons_opti, dim=2)
-
-          ! check for enough data points in time for correlation
-          if ( all(.NOT. L1_neutronsdata_mask(:,iTime))) then
-              write (*,*) 'WARNING: neutrons data at time ', iTime, ' is empty.'
-             !call message('WARNING: objective_neutrons_kge_catchment_avg: ignored currrent time step since less than')
-             !call message('         10 valid cells available in soil moisture observation')
-             mask_times(iTime) = .FALSE.
-             cycle
-          end if
-          neutrons_catch_avg_basin(iTime)      = average(  L1_neutronsdata(s1:e1,iTime), mask=L1_neutronsdata_mask(s1:e1,iTime))
-          neutrons_opti_catch_avg_basin(iTime) = average(neutrons_opti(s1:e1,iTime), mask=L1_neutronsdata_mask(s1:e1,iTime))
-       end do
-
-       ! calculate average neutrons KGE over all basins with power law
-       ! basins are weighted equally ( 1 / real(nBasin,dp))**6
-       objective_neutrons_kge_catchment_avg = objective_neutrons_kge_catchment_avg + &
-            ( (1.0_dp-KGE(neutrons_catch_avg_basin, neutrons_opti_catch_avg_basin, mask=mask_times)) / real(nBasins,dp) )**6
-    end do
-
-    objective_neutrons_kge_catchment_avg = objective_neutrons_kge_catchment_avg**onesixth
-
-    call message('    objective_neutrons_kge_catchment_avg = ', num2str(objective_neutrons_kge_catchment_avg,'(F9.5)'))
-
-END FUNCTION objective_neutrons_kge_catchment_avg
-
+  
 END MODULE mo_objective_function

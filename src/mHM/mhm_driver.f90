@@ -144,6 +144,7 @@
 !                       Rohini Kumar, Mar 2016 - options to handle different soil databases
 !                                                modified MPR to included soil horizon specific properties/parameters
 !                     Stephan Thober, Nov 2016 - implemented adaptive timestep for routing
+!                       Rohini Kumar, Dec 2016 - options to read (monthly mean) LAI fields
 !
 ! --------------------------------------------------------------------------
 
@@ -181,10 +182,13 @@ PROGRAM mhm_driver
   USE mo_message,             ONLY : message, message_text          ! For print out
   USE mo_meteo_forcings,      ONLY : prepare_meteo_forcings_data
   USE mo_mhm_eval,            ONLY : mhm_eval
-  USE mo_prepare_gridded_LAI, ONLY : prepare_gridded_daily_LAI_data ! prepare daily LAI gridded fields
+  USE mo_prepare_gridded_LAI, ONLY : prepare_gridded_daily_LAI_data, & ! prepare daily LAI gridded fields
+                             prepare_gridded_mean_monthly_LAI_data  ! prepare mean monthly LAI gridded fields
+  
   USE mo_read_optional_data,  ONLY : read_soil_moisture,     &      ! optional soil moisture reader, basin_avg_TWS reader
                                      read_basin_avg_TWS,     &
-                                     read_neutrons
+                                     read_neutrons,          &
+                                     read_evapotranspiration
   USE mo_read_config,         ONLY : read_config                    ! Read main configuration files
   USE mo_read_wrapper,        ONLY : read_data                      ! Read all input data
   USE mo_read_latlon,         ONLY : read_latlon
@@ -281,8 +285,8 @@ PROGRAM mhm_driver
         call message('    Windspeed directory:        ', trim(dirwindspeed(ii)  ))
      end select
      call message('    Output directory:           ',   trim(dirOut(ii) ))
-     if (timeStep_LAI_input < 0) then
-        call message('    LAI directory:             ', trim(dirgridded_LAI(ii)) )
+     if (timeStep_LAI_input .NE. 0) then
+        call message('    LAI directory:              ', trim(dirgridded_LAI(ii)) )
      end if
 
      call message('')
@@ -327,47 +331,49 @@ PROGRAM mhm_driver
      call timer_stop(itimer)
      call message('    in ', trim(num2str(timer_get(itimer),'(F9.3)')), ' seconds.')
 
-     ! daily gridded LAI values
-     if (timeStep_LAI_input < 0) then
-        call message('  Reading LAI for basin: ', trim(adjustl(num2str(ii))),' ...')
-        call timer_start(itimer)
-        call prepare_gridded_daily_LAI_data(ii)
-        call timer_stop(itimer)
-        call message('    in ', trim(num2str(timer_get(itimer),'(F9.3)')), ' seconds.')
+     ! gridded LAI values
+     if( timeStep_LAI_input .NE. 0 ) then
+        ! daily gridded fieelds
+        if (timeStep_LAI_input .LT. 0) then
+           call message('  Reading LAI for basin: ', trim(adjustl(num2str(ii))),' ...')
+           call timer_start(itimer)
+           call prepare_gridded_daily_LAI_data(ii)
+           call timer_stop(itimer)
+           call message('    in ', trim(num2str(timer_get(itimer),'(F9.3)')), ' seconds.')
+        end if
+        ! long term mean monthly gridded fields
+        if ( timeStep_LAI_input .EQ. 1 ) then
+           call message('  Reading LAI for basin: ', trim(adjustl(num2str(ii))),' ...')
+           call timer_start(itimer)
+           call prepare_gridded_mean_monthly_LAI_data(ii)
+           call timer_stop(itimer)
+           call message('    in ', trim(num2str(timer_get(itimer),'(F9.3)')), ' seconds.')
+        end if
      endif
 
-     ! read optional optional data
-     ! e.g. for optimization against soil mopisture, soil moisture is read
-     if ((opti_function .GE. 10) .AND. (opti_function .LE. 13) .AND. optimize) then
-        call read_soil_moisture(ii)
-     endif
-
-     ! read optional spatio-temporal neutrons data
-    if ( (opti_function .EQ. 17) .AND. optimize ) then
-        call read_neutrons(ii)
-        call message('  neutrons data read')
-    endif
+     ! read optional optional data if necessary
+     if (optimize) then
+        select case (opti_function)
+        case(10:13,28)
+           ! read optional spatio-temporal soil mositure data
+           call read_soil_moisture(ii)
+        case(17)
+           ! read optional spatio-temporal neutrons data
+           call read_neutrons(ii)
+        case(27)
+           ! read optional spatio-temporal evapotranspiration data
+           call read_evapotranspiration(ii)
+        case(15)
+           ! read optional basin average TWS data at once, therefore only read it
+           ! the last iteration of the basin loop to ensure same time for all basins
+           ! note: this is similar to how the runoff is read using mrm below
+           if ( ii == nbasins) then 
+              call read_basin_avg_TWS()
+           end if
+        end select
+     end if
 
   end do
-
-  ! read optional basin average TWS data at once, therefore outside of the basin loop to ensure same time for all basins
-  ! note this is similar to how the runoff is read using mrm below
-     if ( (opti_function .EQ. 15) .AND. optimize ) then
-        call read_basin_avg_TWS()
-        call message('  basin_avg TWS data read')
-     endif
-
-  ! The following block is for testing of the restart <<<<<<<<<<<<<<<<<<<<<<<<<<
-  ! if ( write_restart ) then
-  !    itimer = itimer + 1
-  !    call message()
-  !    call message( '  Write restart config file')
-  !    call timer_start(itimer)
-  !    call write_restart_config( dirRestartOut )
-  !    call timer_stop(itimer)
-  !    call message('    in ', trim(num2str(timer_get(itimer),'(F9.3)')), ' seconds.')
-  ! end if
-  ! stop 'Test restart' ! <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 #ifdef MRM2MHM
   ! --------------------------------------------------------------------------
@@ -385,18 +391,19 @@ PROGRAM mhm_driver
   iTimer = iTimer + 1
   call message()
   if ( optimize ) then
-
+     
      select case(opti_function) 
 #ifdef MRM2MHM
      case(1:9,14) 
         ! call optimization against only runoff (no other variables)
         call optimization(single_objective_runoff, dirConfigOut, funcBest, maskpara)
 #endif
-     case(10:13,15,17) 
+     case(10:13,15,17,27,28)
         ! call optimization for other variables
         call optimization(objective, dirConfigOut, funcBest, maskpara)
      case default 
-        call message('mhm_driver: 1: The kind (SO or MO) is not specified for the given objective function!') 
+        call message('***ERROR: mhm_driver: The given objective function number ', &
+             trim(adjustl(num2str(opti_function))), ' in mhm.nml is not valid!')
         stop 
      end select
 

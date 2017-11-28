@@ -113,6 +113,11 @@ CONTAINS
   !                  Matthias Zink,                  Dec 2014 - adopted inflow gauges to ignore headwater cells
   !                  Stephan Thober,                 Aug 2015 - moved routing to mRM
   !                  Rohini Kumar,                   Mar 2016 - changes for handling multiple soil database options
+  !                  Rohini Kumar,                   Dec 2016 - changes for reading gridded mean monthly LAI fields
+  !                  Stephan Thober,                 Jan 2017 - added prescribed weights for tavg and pet
+  !                  Zink M. Demirel C.,             Mar 2017 - Added Jarvis soil water stress function at SM process(3)  
+
+  !
   ! ------------------------------------------------------------------
 
   subroutine mHM(  &
@@ -175,6 +180,10 @@ CONTAINS
       fnight_pet          , & ! [-] night ratio PET  < 1
       fday_temp           , & ! [-] day factor mean temp
       fnight_temp         , & ! [-] night factor mean temp
+      temp_weights        , & ! multiplicative weights for temperature (deg K)
+      pet_weights         , & ! multiplicative weights for potential evapotranspiration
+      pre_weights         , & ! multiplicative weights for precipitation
+      read_meteo_weights  , & ! flag whether weights for tavg and pet have read and should be used
       pet_in              , & ! [mm d-1] Daily potential evapotranspiration (input)
       tmin_in             , & ! [degc]   Daily minimum temperature
       tmax_in             , & ! [degc]   Daily maxumum temperature
@@ -236,6 +245,7 @@ CONTAINS
       soil_moist_FC       , & ! Soil moisture below which actual ET is reduced
       soil_moist_sat      , & ! Saturation soil moisture for each horizon [mm]
       soil_moist_exponen  , & ! Exponential parameter to how non-linear is the soil water retention
+      jarvis_thresh_c1    , & ! jarvis critical value for normalized soil water content
       temp_thresh         , & ! Threshold temperature for snow/rain
       unsat_thresh        , & ! Threshold water depth in upper reservoir
       water_thresh_sealed , & ! Threshold water depth in impervious areas
@@ -321,6 +331,10 @@ CONTAINS
     real(dp),    dimension(:),     intent(in) :: fnight_pet
     real(dp),    dimension(:),     intent(in) :: fday_temp
     real(dp),    dimension(:),     intent(in) :: fnight_temp
+    real(dp),    dimension(:,:,:), intent(in) :: temp_weights
+    real(dp),    dimension(:,:,:), intent(in) :: pet_weights
+    real(dp),    dimension(:,:,:), intent(in) :: pre_weights
+    logical,                       intent(in) :: read_meteo_weights
     real(dp),    dimension(:),     intent(in) :: pet_in
     real(dp),    dimension(:),     intent(in) :: tmin_in
     real(dp),    dimension(:),     intent(in) :: tmax_in
@@ -386,6 +400,7 @@ CONTAINS
     real(dp), dimension(:,:),      intent(inout) ::  soil_moist_FC
     real(dp), dimension(:,:),      intent(inout) ::  soil_moist_sat
     real(dp), dimension(:,:),      intent(inout) ::  soil_moist_exponen
+    real(dp), dimension(:),        intent(inout) ::  jarvis_thresh_c1
     real(dp), dimension(:),        intent(inout) ::  temp_thresh
     real(dp), dimension(:),        intent(inout) ::  unsat_thresh
     real(dp), dimension(:),        intent(inout) ::  water_thresh_sealed
@@ -488,7 +503,7 @@ CONTAINS
                 alpha, deg_day_incr, deg_day_max, deg_day_noprec,                         &
                 fAsp, HarSamCoeff(:), PrieTayAlpha(:,:), aeroResist(:,:),                 &
                 surfResist(:,:), frac_roots, k0, k1, k2, kp, karst_loss,                  &
-                soil_moist_FC, soil_moist_sat, soil_moist_exponen,                        &
+                soil_moist_FC, soil_moist_sat, soil_moist_exponen, jarvis_thresh_c1(:),   &
                 temp_thresh, unsat_thresh, water_thresh_sealed, wilting_point            )
         end if
         !-------------------------------------------------------------------
@@ -508,7 +523,7 @@ CONTAINS
     ! IT is now outside of mHM since LAI is now dynamic variable
     !-------------------------------------------------------------------
     select case(timeStep_LAI_input)
-    case(0)
+    case(0:1) ! in both case of option with 0 and 1
        ! Estimate max. intecept. capacity based on long term monthly mean LAI values
        ! Max. interception is updated every month rather than every day
        if( (tt .EQ. 1) .OR. (month .NE. counter_month) ) then
@@ -589,6 +604,9 @@ CONTAINS
        call temporal_disagg_forcing( isday, ntimesteps_day, prec_in(k),                        & ! Intent IN
             pet, temp_in(k), fday_prec(month), fday_pet(month),                                & ! Intent IN
             fday_temp(month), fnight_prec(month), fnight_pet(month), fnight_temp(month),       & ! Intent IN
+            temp_weights(k, month, hour + 1), pet_weights(k, month, hour + 1),                 & ! Intent IN
+            pre_weights(k, month, hour + 1),                                                   & ! Intent IN
+            read_meteo_weights,                                                                & ! Intent IN
             prec, pet_calc(k), temp )                                                            ! Intent OUT
 
        call canopy_interc( pet_calc(k), interc_max(k), prec,                                   & ! Intent IN
@@ -603,9 +621,12 @@ CONTAINS
 
        tmp_soilMoisture(:) = soilMoisture(k,:)
        tmp_infiltration(:) = infiltration(k,:)
-       call soil_moisture( fSealed1(k), water_thresh_sealed(k),                                & ! Intent IN
+       
+       call soil_moisture(processMatrix(3,1),                                                  & ! Intent IN
+            fSealed1(k), water_thresh_sealed(k),                                               & ! Intent IN
             pet_calc(k), evap_coeff(month), soil_moist_sat(k,:), frac_roots(k,:),              & ! Intent IN
-            soil_moist_FC(k,:), wilting_point(k,:),  soil_moist_exponen(k,:), aet_canopy(k),   & ! Intent IN
+            soil_moist_FC(k,:), wilting_point(k,:), soil_moist_exponen(k,:),                   & ! Intent IN
+            jarvis_thresh_c1(k), aet_canopy(k),                                                & ! Intent IN
             prec_effect(k), runoff_sealed(k), sealedStorage(k),                                & ! Intent INOUT
             tmp_infiltration(:), tmp_soilMoisture(:),                                          & ! Intent INOUT
             tmp_aet_soil(:), aet_sealed(k) )                                                     ! Intent OUT

@@ -342,7 +342,7 @@ CONTAINS
        end do
 
        ! land cover scenes related to LAI
-       if(timeStep_LAI_input .EQ. 0) then
+       if( timeStep_LAI_input .EQ. 0 ) then
          if ( L0_LCover_LAI(k) .eq. nodata_i4 ) then
             message_text = trim(num2str(k,'(I5)'))//','// trim(num2str(iBasin,'(I5)'))
             call message(' Error: land cover ID for LAI has missing values within the valid masked area at cell in basin ', &
@@ -940,6 +940,7 @@ CONTAINS
    ! level-0 information
    call get_basin_info( iBasin, 0, nrows0, ncols0, mask=mask0,                         &
                         xllcorner=xllcorner0, yllcorner=yllcorner0, cellsize=cellsize0 ) 
+  
    ! grid information
    call calculate_grid_properties( nrows0, ncols0, xllcorner0, yllcorner0, cellsize0, nodata_dp,          &
                                    level2%cellsize(iBasin), &
@@ -952,8 +953,10 @@ CONTAINS
          ( abs(yllcorner2 - level2%yllcorner(iBasin)) .gt. tiny(1.0_dp) )     .or. &
          ( abs(cellsize2  - level2%cellsize(iBasin))  .gt. tiny(1.0_dp) )             ) then
       call message()
-      call message('***ERROR: L2_variable_init: Resolution of meteorology differs in basin: ', &
+      call message('***ERROR: L2_variable_init: Header of meteorology and morphology do not fit for basin: ', &
            trim(adjustl(num2str(iBasin))))
+      call message('                            Rows, cols and cellsize need to be multipliers. x and y corners ')
+      call message('                            need to be equal.')
       stop
     end if
 
