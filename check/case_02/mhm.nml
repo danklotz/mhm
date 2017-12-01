@@ -22,7 +22,29 @@
 ! Matthias Zink,  Nov 2014 - added multiple options for process 5 - PET
 !******************************************************************************************
 !
-
+!******************************************************************************************
+! PROJECT DESCRIPTION
+!******************************************************************************************
+!-----------------------------------------------------------------------------
+!> Provide details on the model simulations, to appear in the netcdf output attributes
+!-----------------------------------------------------------------------------
+&project_description
+!> project name
+project_details="mHM test basin project"
+!> any specific description of simulation
+setup_description="model run for the Mosel basin, forced with the E-OBS meteorologic data"
+!> e.g. hindcast simulation, seasonal forecast, climate projection
+simulation_type="historical simulation"
+!> convention used for dataset
+Conventions="XXX"
+!> contact details, incl. PI name, modellers
+contact="mHM developers (email:mhm-developers@ufz.de)"
+!> developing institution, specific mHM revision, latest release version (automatically included)
+mHM_details="Helmholtz Center for Environmental Research - UFZ, Department Computational Hydrosystems, Stochastic Hydrology Group"
+!> some details on data/model run version (creation date is included automatically)
+history="model run version 1"
+/
+  
 !******************************************************************************************
 ! MRM COUPLING MODE
 !******************************************************************************************
@@ -401,9 +423,11 @@ processCase(1) = 1
 !> snow
 !> 1 - degree-day approach
 processCase(2) = 1
-!> soilmoisture
-!> 1 - multi-layer infiltration capacity approach, Brooks-Corey like
-processCase(3) = 1
+!> soil moisture
+!> 1 - Feddes equation for ET reduction, multi-layer infiltration capacity approach, Brooks-Corey like
+!> 2 - Jarvis equation for ET reduction, multi-layer infiltration capacity approach, Brooks-Corey like
+!> 3 - Jarvis equation for ET reduction and FC dependency on root fraction coefficient
+processCase(3) = 2
 !> directRunoff
 !> 1 - linear reservoir exceedance approach
 processCase(4) = 1

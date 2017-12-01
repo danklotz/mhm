@@ -160,6 +160,7 @@ contains
 
     use mo_upscaling_operators, only: upscale_harmonic_mean
     use mo_message,             only: message
+    use mo_string_utils,        only: num2str
 
     !$  use omp_lib
 
@@ -252,7 +253,7 @@ contains
     tmp_rootFractionCoefficient_forest     = param(1)            ! min(1.0_dp, param(2) + param(3) + param(1))
     tmp_rootFractionCoefficient_impervious = param(2)
     tmp_rootFractionCoefficient_pervious   = param(1) - param(3) ! min(1.0_dp, param(2) + param(3))
-
+                              
     !   3 - dependent on land cover and additionally soil texture
     select case (processMatrix(3,1))    
     case(3)
@@ -272,6 +273,7 @@ contains
           FC0     = nodata
           PW0     = nodata
           fRoots0 = nodata
+          tmp_rootFractionCoefficient_perviousFC = nodata
           ! Initalise mHM horizon depth
           !  Last layer depth is soil type dependent, and hence it assigned within the inner loop 
           ! by default for the first soil layer
@@ -285,7 +287,7 @@ contains
 
           !$OMP PARALLEL
           !$OMP DO PRIVATE( l, s ) SCHEDULE( STATIC )
-          cellloop: do k = 1, size(LCOVER0,1)
+          cellloop0: do k = 1, size(LCOVER0,1)
              l = LCOVER0(k)
              s = soilID0(k,1)  !>> in this case the second dimension of soilId0 = 1
              ! depth weightage bulk density
@@ -325,25 +327,21 @@ contains
              SMs0(k) = SMs0(k) * (dpth_t - dpth_f)
              FC0(k)  = FC0(k)  * (dpth_t - dpth_f)
              PW0(k)  = PW0(k)  * (dpth_t - dpth_f)
-          end do cellloop
+          end do cellloop0
           !$OMP END DO
           !$OMP END PARALLEL    
-
 
           tmp_FC0min=minval(FC0(:))
           tmp_FC0max=maxval(FC0(:))
 
-          if(tmp_FC0min .lt. 0.0_dp) then 
-             print*,"CHECK FC0min, -9999 effect",tmp_FC0min
+          if(tmp_FC0min .lt. 0.0_dp) then
              tmp_FC0min=minval(FC0(cell_id0))
-             print*,"NEW FC0min is",tmp_FC0min
           end if
 
           !$OMP PARALLEL
-          !$OMP DO PRIVATE( l, s ) SCHEDULE( STATIC )
-          celllloop: do k = 1, size(LCOVER0,1)
+          !$OMP DO PRIVATE( l, tmp_rootFractionCoefficient_perviousFC ) SCHEDULE( STATIC )
+          celllloop0: do k = 1, size(LCOVER0,1)
              l = LCOVER0(k)
-             s = soilID0(k,1)  !>> in this case the second dimension of soilId0 = 1      
              !---------------------------------------------------------------------
              ! Effective root fractions in soil horizon... 
              !  as weightage sum (according to LC fraction)
@@ -390,33 +388,39 @@ contains
                 fRoots0(k) = (1.0_dp - tmp_rootFractionCoefficient_impervious**(dpth_t*0.1_dp)) &
                      - (1.0_dp - tmp_rootFractionCoefficient_impervious**(dpth_f*0.1_dp) )
              case(3)
-
+                
                 select case (processMatrix(3,1))
                 case(1:2)
                    ! permeable   
                    fRoots0(k) = (1.0_dp - tmp_rootFractionCoefficient_pervious**(dpth_t*0.1_dp)) &
-                        - (1.0_dp - tmp_rootFractionCoefficient_pervious**(dpth_f*0.1_dp) )
+                       - (1.0_dp - tmp_rootFractionCoefficient_pervious**(dpth_f*0.1_dp) )
+                     
                 case(3)
                    ! permeable 
                    ! introducing FC dependency on root frac coef. by Simon Stisen and M. Cuneyd Demirel from GEUS.dk
-                   tmp_rootFractionCoefficient_perviousFC=(((FC0(k) - tmp_FC0min)/&
-                        ((tmp_FC0max-tmp_FC0min)) * tmp_rootFractionCoefficient_clay))&
+                   tmp_rootFractionCoefficient_perviousFC=(((FC0(k) - tmp_FC0min)/ &
+                        ((tmp_FC0max-tmp_FC0min)) * tmp_rootFractionCoefficient_clay)) &
                         + ((1-(FC0(k) - tmp_FC0min)/(tmp_FC0max-tmp_FC0min)) * &
                         tmp_rootFractionCoefficient_sand)  
 
                    if(tmp_rootFractionCoefficient_perviousFC .lt. 0.0_dp .OR. tmp_rootFractionCoefficient_perviousFC .gt. 1.0_dp) &
                         print*, "CHECK tmp_rootFractionCoefficient_perviousFC", tmp_rootFractionCoefficient_perviousFC
-
+                   
                    fRoots0(k) = (1.0_dp - tmp_rootFractionCoefficient_perviousFC**(dpth_t*0.1_dp)) &
                         - (1.0_dp - tmp_rootFractionCoefficient_perviousFC**(dpth_f*0.1_dp) )  
-
-                   if(fRoots0(k) .lt. 0.0_dp .OR. fRoots0(k) .gt. 1.0_dp) &
-                        print*, "CHECK fRoots0(k)", fRoots0(k)
+                   
+                   if((fRoots0(k) .lt. 0.0_dp) .OR. (fRoots0(k) .gt. 1.0_dp)) then
+                      call message('***ERROR: Fraction of roots out of range [0,1]. Cell', &
+                           num2str(k), ' has value ', num2str(fRoots0(k)))
+                      ! stop
+                   end if
                 end select
              end select
 
-          end do celllloop
+          end do celllloop0
           !$OMP END DO
+          !$OMP END PARALLEL
+
           beta0 = Bd0*param(4)
 
           !---------------------------------------------
@@ -433,7 +437,6 @@ contains
           L1_fRoots(:,h) = upscale_harmonic_mean( nL0_in_L1, Upp_row_L1, Low_row_L1, &
                Lef_col_L1, Rig_col_L1, cell_id0, mask0, nodata, fRoots0 )
 
-          !$OMP END PARALLEL
        end do
        ! to handle multiple soil horizons with unique soil class   
     CASE(1)
@@ -444,6 +447,7 @@ contains
           FC0     = nodata
           PW0     = nodata
           fRoots0 = nodata
+          tmp_rootFractionCoefficient_perviousFC = nodata
           ! initalise mHM horizon depth
           if (h .eq. 1 ) then
              dpth_f = 0.0_dp
@@ -454,7 +458,9 @@ contains
              dpth_t = HorizonDepth(h)
           end if
           ! need to be done for every layer to get fRoots
-          do k = 1, size(LCOVER0,1)
+          !$OMP PARALLEL
+          !$OMP DO PRIVATE( l, s ) SCHEDULE( STATIC )
+          cellloop1: do k = 1, size(LCOVER0,1)
              L = LCOVER0(k)
              s =  soilID0(k,h)
              if ( h .le. nTillHorizons(1) ) then
@@ -468,7 +474,9 @@ contains
                 FC0(k)  = thetaFC(s,1) * (dpth_t - dpth_f) ! in mm
                 PW0(k)  = thetaPW(s,1) * (dpth_t - dpth_f) ! in mm          
              end if
-          end do
+          end do cellloop1
+          !$OMP END DO
+          !$OMP END PARALLEL    
 
 
           tmp_FC0min=minval(FC0(:))
@@ -480,8 +488,10 @@ contains
              print*,"NEW FC0min is",tmp_FC0min
           end if
 
-
-          do k = 1, size(LCOVER0,1)
+          !$OMP PARALLEL
+          !$OMP DO PRIVATE( l, tmp_rootFractionCoefficient_perviousFC ) SCHEDULE( STATIC )
+          celllloop1: do k = 1, size(LCOVER0,1)
+             l = LCOVER0(k)
              !================================================================================
              ! fRoots = f[LC] --> (fRoots(H) = 1 - beta^d)
              ! see below for comments and references for the use of this simple equation
@@ -504,8 +514,8 @@ contains
                 case(1:2)        
                    ! permeable   
                    fRoots0(k) = (1.0_dp - tmp_rootFractionCoefficient_pervious**(dpth_t*0.1_dp)) &
-                        - (1.0_dp - tmp_rootFractionCoefficient_pervious**(dpth_f*0.1_dp) )
-
+                       - (1.0_dp - tmp_rootFractionCoefficient_pervious**(dpth_f*0.1_dp) )
+                           
                 case(3)
                    ! permeable 
                    !introducing FC dependency on root frac coef. by Simon Stisen and M. Cuneyd Demirel from GEUS.dk
@@ -520,12 +530,17 @@ contains
                    fRoots0(k) = (1.0_dp - tmp_rootFractionCoefficient_perviousFC**(dpth_t*0.1_dp)) &
                         - (1.0_dp - tmp_rootFractionCoefficient_perviousFC**(dpth_f*0.1_dp) )  
 
-                   if(fRoots0(k) .lt. 0.0_dp .OR. fRoots0(k) .gt. 1.0_dp) &
-                        print*, "CHECK fRoots0(k)", fRoots0(k)
+                   if((fRoots0(k) .lt. 0.0_dp) .OR. (fRoots0(k) .gt. 1.0_dp)) then
+                      call message('***ERROR: Fraction of roots out of range [0,1]. Cell', &
+                           num2str(k), ' has value ', num2str(fRoots0(k)))
+                      ! stop
+                   end if
                 end select
              end select
 
-          end do !>> cellloop
+          end do celllloop1
+          !$OMP END DO
+          !$OMP END PARALLEL
 
           ! beta parameter
           beta0 = Bd0*param(4)
@@ -541,6 +556,7 @@ contains
                Lef_col_L1, Rig_col_L1, cell_id0, mask0, nodata, FC0  )
           L1_fRoots(:,h) = upscale_harmonic_mean( nL0_in_L1, Upp_row_L1, Low_row_L1, &
                Lef_col_L1, Rig_col_L1, cell_id0, mask0, nodata, fRoots0 )
+
        end do
        ! anything else   
     CASE DEFAULT

@@ -118,6 +118,7 @@ CONTAINS
     end if
     
     ! L0 and L1 initialization
+    
     if ( perform_mpr ) then
        if (iBasin .eq. 1) then
           call L0_check_input(iBasin)
@@ -125,10 +126,11 @@ CONTAINS
           call L0_check_input(iBasin)
        end if
     end if
-
+    
     if ( .not. read_restart ) then
        if (iBasin .eq. 1) then
           call L0_variable_init(iBasin, soilDB%is_present)
+          
        else if (L0_Basin(iBasin) .ne. L0_Basin(iBasin - 1 )) then
           call L0_variable_init(iBasin, soilDB%is_present)
        end if
@@ -193,9 +195,11 @@ CONTAINS
 
   subroutine constants_init( )
 
-    use mo_global_variables, only: NTSTEPDAY, c2TSTu, timeStep
+    use mo_global_variables, only: NTSTEPDAY, c2TSTu, timeStep, neutron_integral_AFast
+    use mo_common_variables, only: processMatrix
     use mo_message,          only: message
     use mo_string_utils,     only: num2str
+    use mo_neutrons,         only: TabularIntegralAFast
 
     implicit none
 
@@ -203,9 +207,18 @@ CONTAINS
     if (mod(24,timeStep) > 0) then
        call message('mo_startup: timeStep must be a divisor of 24: ', num2str(timeStep))
        stop
-    endif
+    end if
     NTSTEPDAY  = 24_i4/timeStep            ! # of time steps per day
     c2TSTu     = real(timeStep,dp)/24.0_dp ! from per timeStep to per day
+
+    !Fill Tabular for neutron flux integral
+    if ( processMatrix(10, 1) .eq. 2 ) then
+       allocate(neutron_integral_AFast(10000+2))
+       call TabularIntegralAFast(neutron_integral_AFast,20.0_dp)
+    else
+       allocate(neutron_integral_AFast(1))
+       neutron_integral_AFast(:)=0.0_dp
+    endif
 
   end subroutine constants_init
 
@@ -544,7 +557,7 @@ CONTAINS
        else 
           ! if not: assign rank / (data points + 1)
           temp(i) = real(i, dp) / real(nCells+1,dp)
-       endif
+       end if
     end do
 
     ! EXAMPLE
