@@ -5,7 +5,7 @@
 - All the details can be found in the [user manual][5].
 - The mHM comes with a [LICENSE][6] agreement, this includes also the GNU Lesser General Public License.
 - There is a list of [publications using mHM][7].
-
+- **This git repository is not yet operational. Please develop your code using the [SVN repository](https://svn.ufz.de/mhm/). Access can be granted through the [registration form](http://www.ufz.de/index.php?en=40116) on the [mHM website](http://www.ufz.de/mhm/).**
 
 ## Cite as
 
